@@ -1,0 +1,1 @@
+[score_all] opt=opt5_all_cpu level=5 | call=31672 | elapsed=0.176 ms (176 us) | n=4 p=1081 | map=467x314 | work_units(n*p)=4324 | us_per_candidate=44.000 | cumulative=85542.321 ms / 31672 calls (avg=2.701 ms/call)

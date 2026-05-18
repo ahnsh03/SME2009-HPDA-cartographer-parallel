@@ -1,0 +1,41 @@
+<launch>
+  <!-- Student-specific namespace -->
+  <arg name="ns" default="student01" />
+
+  <arg name="bag_file" default="$(find cartographer_parallel)/bags/scan.bag" />
+  <arg name="map_yaml_file" default="$(find cartographer_parallel)/maps/0501.yaml" />
+  <arg name="full_map_search" default="false" />
+  <arg name="linear_search_window" default="3.0" />
+  <arg name="global_search_window" default="20.0" />
+  <arg name="angular_search_window" default="0.35" />
+  <arg name="branch_and_bound_depth" default="4" />
+  <arg name="initial_x" default="-2.0" />
+  <arg name="initial_y" default="6.82" />
+  <arg name="initial_yaw" default="-3.0255282583321743" />
+  <arg name="global_first_match" default="false" />
+
+  <!-- Do not use /clock because all students share the same ROS master -->
+  <param name="/use_sim_time" value="false" />
+
+  <group ns="$(arg ns)">
+    <include file="$(find cartographer_parallel)/launch/fast_correlative.launch">
+      <arg name="map_yaml_file" value="$(arg map_yaml_file)" />
+
+      <!-- Relative topic name. Inside group, this becomes /$(arg ns)/scan -->
+      <arg name="scan_topic" value="scan" />
+
+      <arg name="initial_x" value="$(arg initial_x)" />
+      <arg name="initial_y" value="$(arg initial_y)" />
+      <arg name="initial_yaw" value="$(arg initial_yaw)" />
+      <arg name="global_first_match" value="$(arg global_first_match)" />
+      <arg name="full_map_search" value="$(arg full_map_search)" />
+      <arg name="linear_search_window" value="$(arg linear_search_window)" />
+      <arg name="global_search_window" value="$(arg global_search_window)" />
+      <arg name="angular_search_window" value="$(arg angular_search_window)" />
+      <arg name="branch_and_bound_depth" value="$(arg branch_and_bound_depth)" />
+    </include>
+
+    <node pkg="rosbag" type="play" name="scan_bag_play" output="screen"
+          args="$(arg bag_file) /scan:=scan" />
+  </group>
+</launch>

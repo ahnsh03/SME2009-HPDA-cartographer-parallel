@@ -1,0 +1,43 @@
+<launch>
+  <arg name="map_yaml_file" default="$(find cartographer_parallel)/maps/0501.yaml" />
+
+  <arg name="scan_topic" default="scan" />
+
+  <arg name="initial_x" default="-2.0" />
+  <arg name="initial_y" default="6.82" />
+  <arg name="initial_yaw" default="-3.0255282583321743" />
+  <arg name="full_map_search" default="false" />
+  <arg name="linear_search_window" default="3.0" />
+  <arg name="global_search_window" default="20.0" />
+  <arg name="angular_search_window" default="0.35" />
+  <arg name="angular_step" default="0.05" />
+  <arg name="branch_and_bound_depth" default="4" />
+  <arg name="min_score" default="0.05" />
+  <arg name="publish_top_candidates" default="150" />
+  <arg name="global_first_match" default="false" />
+
+  <node pkg="cartographer_parallel" type="fast_correlative_node"
+        name="fast_correlative_node" output="screen">
+    <param name="map_yaml_file" value="$(arg map_yaml_file)" />
+    <param name="scan_topic" value="$(arg scan_topic)" />
+
+     <param name="map_frame" value="map" />
+    <param name="base_frame" value="base_link" />
+
+    <param name="initial_x" value="$(arg initial_x)" />
+    <param name="initial_y" value="$(arg initial_y)" />
+    <param name="initial_yaw" value="$(arg initial_yaw)" />
+    <param name="global_first_match" value="$(arg global_first_match)" />
+    <param name="global_every_n" value="0" />
+
+    <param name="linear_search_window" value="$(arg linear_search_window)" />
+    <param name="global_search_window" value="$(arg global_search_window)" />
+    <param name="full_map_search" value="$(arg full_map_search)" />
+    <param name="angular_search_window" value="$(arg angular_search_window)" />
+    <param name="angular_step" value="$(arg angular_step)" />
+    <param name="branch_and_bound_depth" value="$(arg branch_and_bound_depth)" />
+    <param name="min_score" value="$(arg min_score)" />
+    <param name="publish_top_candidates" value="$(arg publish_top_candidates)" />
+    <param name="max_candidates" value="$(arg publish_top_candidates)" />
+  </node>
+</launch>

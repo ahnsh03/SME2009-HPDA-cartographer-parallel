@@ -1,0 +1,1 @@
+[score_all] opt=baseline level=0 | call=27754 | elapsed=0.197 ms (197 us) | n=4 p=1081 | map=467x314 | work_units(n*p)=4324 | us_per_candidate=49.250 | cumulative=86824.499 ms / 27754 calls (avg=3.128 ms/call)

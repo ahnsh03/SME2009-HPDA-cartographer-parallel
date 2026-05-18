@@ -1,0 +1,1 @@
+[score_all] opt=opt4_branchless level=4 | call=31631 | elapsed=0.155 ms (155 us) | n=4 p=1081 | map=467x314 | work_units(n*p)=4324 | us_per_candidate=38.750 | cumulative=85703.465 ms / 31631 calls (avg=2.709 ms/call)

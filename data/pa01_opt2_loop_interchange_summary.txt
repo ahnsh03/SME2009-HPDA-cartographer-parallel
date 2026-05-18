@@ -1,0 +1,1 @@
+[score_all] opt=opt2_loop_interchange level=2 | call=41261 | elapsed=0.122 ms (122 us) | n=4 p=1081 | map=467x314 | work_units(n*p)=4324 | us_per_candidate=30.500 | cumulative=82475.606 ms / 41261 calls (avg=1.999 ms/call)

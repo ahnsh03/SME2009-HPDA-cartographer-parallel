@@ -1,0 +1,1 @@
+[score_all] opt=opt3_prefetch level=3 | call=40998 | elapsed=0.138 ms (138 us) | n=4 p=1081 | map=467x314 | work_units(n*p)=4324 | us_per_candidate=34.500 | cumulative=82510.537 ms / 40998 calls (avg=2.013 ms/call)

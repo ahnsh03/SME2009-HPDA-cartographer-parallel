@@ -1,0 +1,20 @@
+# 대용량 측정 로그 (summary만 Git에 포함)
+data/*.log
+
+# 강의 PDF (용량)
+*.pdf
+
+# ROS / catkin (Jetson 로컬 빌드)
+build/
+devel/
+install/
+.catkin_workspace
+
+# IDE
+.vscode/
+*.swp
+*~
+
+# 기타
+__pycache__/
+.DS_Store

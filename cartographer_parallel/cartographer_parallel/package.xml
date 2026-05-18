@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>cartographer_parallel</name>
+  <version>0.0.1</version>
+  <description>
+    Minimal ROS1 package for a standalone 2D Fast Correlative Scan Matcher.
+    It loads a map_saver-style PGM/YAML map, consumes LaserScan input, and
+    publishes candidate poses and odometry.
+  </description>
+  <maintainer email="user@example.com">User</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>roscpp</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <export>
+  </export>
+</package>

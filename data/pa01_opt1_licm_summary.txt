@@ -1,0 +1,1 @@
+[score_all] opt=opt1_licm level=1 | call=27873 | elapsed=0.177 ms (177 us) | n=4 p=1081 | map=467x314 | work_units(n*p)=4324 | us_per_candidate=44.250 | cumulative=86974.050 ms / 27873 calls (avg=3.120 ms/call)
