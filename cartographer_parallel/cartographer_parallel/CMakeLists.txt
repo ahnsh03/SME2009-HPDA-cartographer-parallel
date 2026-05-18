@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.0.2)
 project(cartographer_parallel)
 
 option(BUILD_CUDA_TASK "Build optional CUDA assignment library" OFF)
-# PA01 CPU 단계별 최적화: catkin_make -DPA01_OPT_LEVEL=2
-set(PA01_OPT_LEVEL "0" CACHE STRING "score_all CPU opt level 0..6 (6=final CPU)")
+# PA01 CPU 단계별 최적화: catkin_make -DPA01_OPT_LEVEL=6
+set(PA01_OPT_LEVEL "0" CACHE STRING "score_all CPU opt level 0..6")
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -29,6 +29,13 @@ add_library(assignment_cpu_lib
   src/score_all.cpp
 )
 target_compile_definitions(assignment_cpu_lib PRIVATE PA01_OPT_LEVEL=${PA01_OPT_LEVEL})
+
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(assignment_cpu_lib OpenMP::OpenMP_CXX)
+  target_compile_definitions(assignment_cpu_lib PRIVATE PA01_HAS_OPENMP=1)
+endif()
+
 target_link_libraries(assignment_cpu_lib ${catkin_LIBRARIES})
 
 add_library(fast_matcher_lib
