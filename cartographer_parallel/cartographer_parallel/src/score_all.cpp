@@ -15,6 +15,12 @@
 #define PA01_OPT_LEVEL 0
 #endif
 
+#if defined(PA01_NO_LOG) && PA01_NO_LOG
+#define PA01_DO_LOG 0
+#else
+#define PA01_DO_LOG 1
+#endif
+
 namespace cartographer_parallel {
 namespace {
 
@@ -40,6 +46,16 @@ inline bool InBounds(const int x, const int y, const int w, const int h) {
 void LogTiming(const int n, const int p, const int w, const int h,
                const long long elapsed_us, const char* path_tag = nullptr,
                const int openmp_enabled = -1) {
+#if !PA01_DO_LOG
+  (void)n;
+  (void)p;
+  (void)w;
+  (void)h;
+  (void)elapsed_us;
+  (void)path_tag;
+  (void)openmp_enabled;
+  return;
+#endif
   static unsigned long long call_count = 0;
   static long long cumulative_us = 0;
   ++call_count;
@@ -75,6 +91,7 @@ void LogTiming(const int n, const int p, const int w, const int h,
   std::cerr.flush();
 }
 
+#if PA01_DO_LOG
 void LogLoadedOnce() {
   static bool logged = false;
   if (logged) return;
@@ -84,10 +101,11 @@ void LogLoadedOnce() {
             << " openmp=1" << std::endl;
 #else
   std::cerr << "[score_all] LOADED opt=" << OptTag() << " level=" << PA01_OPT_LEVEL
-            << " openmp=0" << std::endl;
+            << " openmp=0 (install libomp-dev for n>=64 parallel)" << std::endl;
 #endif
   std::cerr.flush();
 }
+#endif
 
 }  // namespace
 
@@ -395,20 +413,61 @@ namespace opt6 {
 constexpr int kMaxStackCandidates = 256;
 constexpr int kOmpCandThreshold = 64;
 
-// opt2 동일 경계 검사 + 행 포인터 + 호출당 heap 할당 제거(스택 sums)
-void ScoreInterchange(const unsigned char* grid_data, const int* px_data,
-                      const int* py_data, const int* cx_data,
-                      const int* cy_data, float* score_out, const int n,
-                      const int p, const int w, const int h,
+inline void AccumulateInBounds(const unsigned char* grid_data, const int w,
+                               const int h, const int x, const int y,
+                               int* const sum) {
+  if (static_cast<unsigned>(x) < static_cast<unsigned>(w) &&
+      static_cast<unsigned>(y) < static_cast<unsigned>(h)) {
+    *sum += grid_data[y * w + x];
+  }
+}
+
+// n=4 전용: SLAM에서 가장 흔한 케이스, 후보 루프 완전 전개
+void ScoreN4(const unsigned char* __restrict grid_data,
+             const int* __restrict px_data, const int* __restrict py_data,
+             const int* __restrict cx_data, const int* __restrict cy_data,
+             float* __restrict score_out, const int p, const int w, const int h,
+             const float inv_denom) {
+  const int c0 = cx_data[0];
+  const int c1 = cx_data[1];
+  const int c2 = cx_data[2];
+  const int c3 = cx_data[3];
+  const int d0 = cy_data[0];
+  const int d1 = cy_data[1];
+  const int d2 = cy_data[2];
+  const int d3 = cy_data[3];
+  int s0 = 0;
+  int s1 = 0;
+  int s2 = 0;
+  int s3 = 0;
+  for (int j = 0; j < p; ++j) {
+    const int px_j = px_data[j];
+    const int py_j = py_data[j];
+    AccumulateInBounds(grid_data, w, h, px_j + c0, py_j + d0, &s0);
+    AccumulateInBounds(grid_data, w, h, px_j + c1, py_j + d1, &s1);
+    AccumulateInBounds(grid_data, w, h, px_j + c2, py_j + d2, &s2);
+    AccumulateInBounds(grid_data, w, h, px_j + c3, py_j + d3, &s3);
+  }
+  score_out[0] = static_cast<float>(s0) * inv_denom;
+  score_out[1] = static_cast<float>(s1) * inv_denom;
+  score_out[2] = static_cast<float>(s2) * inv_denom;
+  score_out[3] = static_cast<float>(s3) * inv_denom;
+}
+
+// opt2 동일 루프 교환 (일반 n)
+void ScoreInterchange(const unsigned char* __restrict grid_data,
+                      const int* __restrict px_data,
+                      const int* __restrict py_data,
+                      const int* __restrict cx_data,
+                      const int* __restrict cy_data, float* __restrict score_out,
+                      const int n, const int p, const int w, const int h,
                       const float inv_denom) {
-  int stack_sums[kMaxStackCandidates];
+  int stack_sums[kMaxStackCandidates] = {};
   int* sums = stack_sums;
   std::vector<int> heap_sums;
   if (n > kMaxStackCandidates) {
     heap_sums.assign(static_cast<size_t>(n), 0);
     sums = heap_sums.data();
-  } else {
-    std::memset(stack_sums, 0, static_cast<size_t>(n) * sizeof(int));
   }
 
   for (int j = 0; j < p; ++j) {
@@ -417,9 +476,9 @@ void ScoreInterchange(const unsigned char* grid_data, const int* px_data,
     for (int i = 0; i < n; ++i) {
       const int x = px_j + cx_data[i];
       const int y = py_j + cy_data[i];
-      if (x >= 0 && x < w && y >= 0 && y < h) {
-        const unsigned char* const row = grid_data + y * w;
-        sums[i] += row[x];
+      if (static_cast<unsigned>(x) < static_cast<unsigned>(w) &&
+          static_cast<unsigned>(y) < static_cast<unsigned>(h)) {
+        sums[i] += grid_data[y * w + x];
       }
     }
   }
@@ -429,12 +488,13 @@ void ScoreInterchange(const unsigned char* grid_data, const int* px_data,
 }
 
 #if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
-// n>=64: 후보별 j 루프(단일 parallel region, px/py 재읽기는 n=256에서 4코어 상쇄)
-void ScoreOmpCandidates(const unsigned char* grid_data, const int* px_data,
-                        const int* py_data, const int* cx_data,
-                        const int* cy_data, float* score_out, const int n,
-                        const int p, const int w, const int h,
-                        const float inv_denom) {
+void ScoreOmpCandidates(const unsigned char* __restrict grid_data,
+                        const int* __restrict px_data,
+                        const int* __restrict py_data,
+                        const int* __restrict cx_data,
+                        const int* __restrict cy_data,
+                        float* __restrict score_out, const int n, const int p,
+                        const int w, const int h, const float inv_denom) {
 #pragma omp parallel for schedule(static) if (n >= kOmpCandThreshold)
   for (int i = 0; i < n; ++i) {
     int sum = 0;
@@ -443,9 +503,9 @@ void ScoreOmpCandidates(const unsigned char* grid_data, const int* px_data,
     for (int j = 0; j < p; ++j) {
       const int x = px_data[j] + cx_i;
       const int y = py_data[j] + cy_i;
-      if (x >= 0 && x < w && y >= 0 && y < h) {
-        const unsigned char* const row = grid_data + y * w;
-        sum += row[x];
+      if (static_cast<unsigned>(x) < static_cast<unsigned>(w) &&
+          static_cast<unsigned>(y) < static_cast<unsigned>(h)) {
+        sum += grid_data[y * w + x];
       }
     }
     score_out[i] = static_cast<float>(sum) * inv_denom;
@@ -453,20 +513,46 @@ void ScoreOmpCandidates(const unsigned char* grid_data, const int* px_data,
 }
 #endif
 
+const char* Dispatch(const unsigned char* grid_data, const int* px_data,
+                     const int* py_data, const int* cx_data,
+                     const int* cy_data, float* score_out, const int n,
+                     const int p, const int w, const int h,
+                     const float inv_denom) {
+  if (n == 4) {
+    ScoreN4(grid_data, px_data, py_data, cx_data, cy_data, score_out, p, w, h,
+            inv_denom);
+    return "n4";
+  }
+#if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
+  if (n >= kOmpCandThreshold) {
+    ScoreOmpCandidates(grid_data, px_data, py_data, cx_data, cy_data, score_out,
+                       n, p, w, h, inv_denom);
+    return "omp_cand";
+  }
+#endif
+  ScoreInterchange(grid_data, px_data, py_data, cx_data, cy_data, score_out, n,
+                   p, w, h, inv_denom);
+  return "interchange";
+}
+
 }  // namespace opt6
 
-// Level 6 — opt2 검증 경로 + 메모리(스택 sums) + OpenMP(빌드 시 n>=64)
 void score_all(const std::vector<unsigned char>& grid, const int w,
                const int h, const std::vector<int>& px,
                const std::vector<int>& py, const std::vector<int>& cx,
                const std::vector<int>& cy, std::vector<float>* const score) {
+#if PA01_DO_LOG
   LogLoadedOnce();
+#endif
   if (score == nullptr) return;
   const int n = std::min(cx.size(), cy.size());
   const int p = std::min(px.size(), py.size());
-  score->assign(static_cast<size_t>(n), 0.0f);
   if (w <= 0 || h <= 0 || p == 0 || grid.size() < static_cast<size_t>(w * h)) {
+    if (score != nullptr) score->clear();
     return;
+  }
+  if (static_cast<int>(score->size()) != n) {
+    score->resize(static_cast<size_t>(n));
   }
 
   const float inv_denom = 1.0f / (255.0f * static_cast<float>(p));
@@ -477,20 +563,13 @@ void score_all(const std::vector<unsigned char>& grid, const int w,
   const int* const cy_data = cy.data();
   float* const score_out = score->data();
 
+#if PA01_DO_LOG
   const auto t0 = std::chrono::steady_clock::now();
-  const char* path_tag = "interchange";
-#if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
-  if (n >= opt6::kOmpCandThreshold) {
-    path_tag = "omp_cand";
-    opt6::ScoreOmpCandidates(grid_data, px_data, py_data, cx_data, cy_data,
-                             score_out, n, p, w, h, inv_denom);
-  } else
 #endif
-  {
-    opt6::ScoreInterchange(grid_data, px_data, py_data, cx_data, cy_data,
-                           score_out, n, p, w, h, inv_denom);
-  }
-
+  const char* path_tag =
+      opt6::Dispatch(grid_data, px_data, py_data, cx_data, cy_data, score_out,
+                     n, p, w, h, inv_denom);
+#if PA01_DO_LOG
   const auto t1 = std::chrono::steady_clock::now();
   const long long elapsed_us =
       std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
@@ -498,6 +577,7 @@ void score_all(const std::vector<unsigned char>& grid, const int w,
   LogTiming(n, p, w, h, elapsed_us, path_tag, 1);
 #else
   LogTiming(n, p, w, h, elapsed_us, path_tag, 0);
+#endif
 #endif
 }
 

@@ -1,3 +1,11 @@
+# benchmark binaries
+benchmark/bench0
+benchmark/bench2
+benchmark/bench6
+benchmark/bench6_noomp
+benchmark/verify0
+benchmark/verify6
+
 # 강의 PDF (용량)
 *.pdf
 

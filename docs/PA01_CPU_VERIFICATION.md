@@ -69,6 +69,18 @@
 **원인:** Jetson에서 OpenMP 미활성 + 힙 `vector` sums + opt2와 다른 경계 처리.  
 **v2 수정:** opt2 동일 interchange, 스택 sums, 행 포인터, CMake `-fopenmp` 폴백.
 
+### opt6 v3 (PC micro-benchmark, `benchmark/compare`)
+
+| Level | n=4 ms/call | n=256 ms/call | 점수 |
+|-------|-------------|---------------|------|
+| 0 | 0.0053 | 0.486 | ref |
+| 2 | 0.0054 | 0.370 | 동일 |
+| 6 + OpenMP | **0.0031** | **0.162** | max_diff=0 |
+| 6 no OpenMP | **0.0031** | **0.246** | max_diff=0 |
+
+**Jetson v2 bag:** `openmp=0` → OMP 미링크, avg 2.187 (opt2 1.999보다 느림).  
+**v3:** `n==4` 전용 루프 + OMP 후보 병렬 + `resize`만 (assign 제거). **Jetson 재측정 필수.**
+
 ---
 
 ## 5. Level 6 설계 근거 (`PA01_OPT_LEVEL=6`)
