@@ -24,7 +24,102 @@ const char* OptTag() {
     case 3: return "opt3_prefetch";
     case 4: return "opt4_branchless";
     case 5: return "opt5_all_cpu";
+    case 6: return "opt6_final_cpu";
     default: return "unknown";
+  }
+}
+
+void LogTimingV6(const int n, const int p, const int w, const int h,
+                 const long long elapsed_us) {
+  static unsigned long long call_count = 0;
+  static long long cumulative_us = 0;
+  static long long peak_us = 0;
+  ++call_count;
+  cumulative_us += elapsed_us;
+  if (elapsed_us > peak_us) {
+    peak_us = elapsed_us;
+  }
+
+  const int heavy = (n >= 64) ? 1 : 0;
+  const long long work_units =
+      static_cast<long long>(n) * static_cast<long long>(p);
+  const double elapsed_ms = static_cast<double>(elapsed_us) / 1000.0;
+  const double peak_ms = static_cast<double>(peak_us) / 1000.0;
+  const double us_per_candidate =
+      (n > 0) ? static_cast<double>(elapsed_us) / static_cast<double>(n) : 0.0;
+  const double cumulative_ms =
+      static_cast<double>(cumulative_us) / 1000.0;
+  const double avg_ms_per_call =
+      (call_count > 0) ? cumulative_ms / static_cast<double>(call_count) : 0.0;
+
+  std::cerr << std::fixed << std::setprecision(3)
+            << "[score_all] opt=" << OptTag() << " level=" << PA01_OPT_LEVEL
+            << " | call=" << call_count
+            << " | elapsed=" << elapsed_ms << " ms (" << elapsed_us << " us)"
+            << " | heavy=" << heavy
+            << " | peak_ms=" << peak_ms
+            << " | n=" << n << " p=" << p
+            << " | map=" << w << "x" << h
+            << " | work_units(n*p)=" << work_units
+            << " | us_per_candidate=" << us_per_candidate
+            << " | cumulative=" << cumulative_ms << " ms / " << call_count
+            << " calls (avg=" << avg_ms_per_call << " ms/call)"
+            << std::endl;
+  std::cerr.flush();
+}
+
+// opt6: j-outer / i-inner, LICM, sums reuse, row pointer, small-n unroll
+inline void AccumulateGrid(const unsigned char* const grid_data, const int w,
+                           const int h, const int x, const int y, int* const sum) {
+  if (x >= 0 && x < w && y >= 0 && y < h) {
+    *sum += grid_data[static_cast<size_t>(y) * static_cast<size_t>(w) +
+                      static_cast<size_t>(x)];
+  }
+}
+
+void ScoreAllOpt6(const unsigned char* const grid_data, const int w, const int h,
+                  const int* const px_data, const int* const py_data,
+                  const int* const cx_data, const int* const cy_data,
+                  const int n, const int p, int* const sums) {
+  if (n == 4) {
+    const int c0x = cx_data[0];
+    const int c0y = cy_data[0];
+    const int c1x = cx_data[1];
+    const int c1y = cy_data[1];
+    const int c2x = cx_data[2];
+    const int c2y = cy_data[2];
+    const int c3x = cx_data[3];
+    const int c3y = cy_data[3];
+    for (int j = 0; j < p; ++j) {
+      const int px_j = px_data[j];
+      const int py_j = py_data[j];
+      AccumulateGrid(grid_data, w, h, px_j + c0x, py_j + c0y, &sums[0]);
+      AccumulateGrid(grid_data, w, h, px_j + c1x, py_j + c1y, &sums[1]);
+      AccumulateGrid(grid_data, w, h, px_j + c2x, py_j + c2y, &sums[2]);
+      AccumulateGrid(grid_data, w, h, px_j + c3x, py_j + c3y, &sums[3]);
+    }
+    return;
+  }
+  if (n == 2) {
+    const int c0x = cx_data[0];
+    const int c0y = cy_data[0];
+    const int c1x = cx_data[1];
+    const int c1y = cy_data[1];
+    for (int j = 0; j < p; ++j) {
+      const int px_j = px_data[j];
+      const int py_j = py_data[j];
+      AccumulateGrid(grid_data, w, h, px_j + c0x, py_j + c0y, &sums[0]);
+      AccumulateGrid(grid_data, w, h, px_j + c1x, py_j + c1y, &sums[1]);
+    }
+    return;
+  }
+  for (int j = 0; j < p; ++j) {
+    const int px_j = px_data[j];
+    const int py_j = py_data[j];
+    for (int i = 0; i < n; ++i) {
+      AccumulateGrid(grid_data, w, h, px_j + cx_data[i], py_j + cy_data[i],
+                     &sums[i]);
+    }
   }
 }
 
@@ -359,8 +454,50 @@ void score_all(const std::vector<unsigned char>& grid, const int w,
                 .count());
 }
 
+#elif PA01_OPT_LEVEL == 6
+// ---------------------------------------------------------------------------
+// Level 6 — 최종 CPU: opt2 + tls sums + small-n unroll (prefetch/branchless 제외)
+// ---------------------------------------------------------------------------
+void score_all(const std::vector<unsigned char>& grid, const int w,
+               const int h, const std::vector<int>& px,
+               const std::vector<int>& py, const std::vector<int>& cx,
+               const std::vector<int>& cy, std::vector<float>* const score) {
+  if (score == nullptr) return;
+  const int n = static_cast<int>(std::min(cx.size(), cy.size()));
+  const int p = static_cast<int>(std::min(px.size(), py.size()));
+  score->assign(static_cast<size_t>(n), 0.0f);
+  if (w <= 0 || h <= 0 || p == 0 || grid.size() < static_cast<size_t>(w * h)) {
+    return;
+  }
+
+  const float inv_denom = 1.0f / (255.0f * static_cast<float>(p));
+  const unsigned char* const grid_data = grid.data();
+  const int* const px_data = px.data();
+  const int* const py_data = py.data();
+  const int* const cx_data = cx.data();
+  const int* const cy_data = cy.data();
+
+  static thread_local std::vector<int> tls_sums;
+  tls_sums.assign(static_cast<size_t>(n), 0);
+  int* const sums = tls_sums.data();
+
+  const auto t0 = std::chrono::steady_clock::now();
+
+  ScoreAllOpt6(grid_data, w, h, px_data, py_data, cx_data, cy_data, n, p, sums);
+
+  for (int i = 0; i < n; ++i) {
+    (*score)[static_cast<size_t>(i)] =
+        static_cast<float>(sums[i]) * inv_denom;
+  }
+
+  const auto t1 = std::chrono::steady_clock::now();
+  LogTimingV6(n, p, w, h,
+              std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0)
+                  .count());
+}
+
 #else
-#error "PA01_OPT_LEVEL must be 0..5"
+#error "PA01_OPT_LEVEL must be 0..6"
 #endif
 
 }  // namespace cartographer_parallel

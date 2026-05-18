@@ -38,7 +38,8 @@ for each candidate i (n):
 | 3 | **프리페치** | 메모리 계층, latency hiding | `PA01_OPT_LEVEL=3` |
 | 4 | **분기 최소화** — in/out 분리 | SIMT 워프 다이버전스 (9주차) | `PA01_OPT_LEVEL=4` |
 | 5 | **전체 조합** | 위 1~4 통합 | `PA01_OPT_LEVEL=5` |
-| (다음) | **NEON SIMD** | 데이터 병렬 (1주차 벡터화) | CUDA 단계 (PA02) |
+| **6** | **최종 CPU** | opt2 + tls sums + n=2/4 unroll | `PA01_OPT_LEVEL=6` |
+| (다음) | CUDA | GPU | PA02 |
 
 **의도적으로 하지 않는 것 (이번 PA01 CPU 단계)**
 

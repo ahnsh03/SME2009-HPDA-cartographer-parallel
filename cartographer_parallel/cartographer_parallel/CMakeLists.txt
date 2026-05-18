@@ -3,7 +3,7 @@ project(cartographer_parallel)
 
 option(BUILD_CUDA_TASK "Build optional CUDA assignment library" OFF)
 # PA01 CPU 단계별 최적화: catkin_make -DPA01_OPT_LEVEL=2
-set(PA01_OPT_LEVEL "0" CACHE STRING "score_all CPU opt level 0..5")
+set(PA01_OPT_LEVEL "0" CACHE STRING "score_all CPU opt level 0..6 (6=final CPU)")
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp

@@ -1,5 +1,5 @@
-# 대용량 측정 로그 (summary만 Git에 포함)
-data/*.log
+# PA01 측정 로그는 data/ 에 포함 (약 42MB 합계)
+# data/pa01_*.log
 
 # 강의 PDF (용량)
 *.pdf
