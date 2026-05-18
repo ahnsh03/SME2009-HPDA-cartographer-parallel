@@ -79,7 +79,28 @@
 | 6 no OpenMP | **0.0031** | **0.246** | max_diff=0 |
 
 **Jetson v2 bag:** `openmp=0` → OMP 미링크, avg 2.187 (opt2 1.999보다 느림).  
-**v3:** `n==4` 전용 루프 + OMP 후보 병렬 + `resize`만 (assign 제거). **Jetson 재측정 필수.**
+**v3:** `n==4` 전용 루프 + OMP 후보 병렬 + `resize`만 (assign 제거).
+
+### opt6 v3 + OpenMP (Jetson, `libomp-dev` 후 재측정) — **확정**
+
+| 지표 | baseline | opt2 | opt6 (openmp=1) |
+|------|----------|------|-----------------|
+| summary avg (ms/call) | 3.128 | 1.999 | **0.611** |
+| cumulative (ms) | 86824 | 82476 | **52132** |
+| vs baseline cumulative | 1.00× | 1.05× | **1.67×** |
+| `LOADED` | — | — | openmp=1 |
+| path (로그) | — | — | n4:58823, omp_cand:23562, interchange:1710 |
+
+**n별 elapsed 합산 (opt6 clean.log):**
+
+| n | opt2 avg/call | opt6 avg/call | 개선 |
+|---|---------------|---------------|------|
+| 4 | 0.122 ms | **0.098 ms** | ~20% |
+| 256 | 7.04 ms* | **2.00 ms** | ~3.5× |
+
+\*opt2 로그에서 n=256 줄만 평균 (해당 run).
+
+**결론:** level 6 확정. SLAM 점수 수식 동일, 경로만 분기.
 
 ---
 

@@ -1,1 +1,1 @@
-[score_all] opt=opt6_best level=6 | call=37862 | elapsed=0.125 ms (125 us) | n=4 p=1081 | map=467x314 | work_units(n*p)=4324 | us_per_candidate=31.250 | cumulative=82806.935 ms / 37862 calls (avg=2.187 ms/call) | path=interchange | openmp=0
+[score_all] opt=opt6_best level=6 | call=85260 | elapsed=0.086 ms (86 us) | n=4 p=1081 | map=467x314 | work_units(n*p)=4324 | us_per_candidate=21.500 | cumulative=52132.304 ms / 85260 calls (avg=0.611 ms/call) | path=n4 | openmp=1
