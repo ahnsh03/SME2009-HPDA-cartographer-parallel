@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <vector>
 
 // Jetson 빌드 시 단계별로 하나만 켜서 복사·측정:
 //   g++ -DPA01_OPT_LEVEL=0 ...  (baseline)
@@ -388,12 +390,72 @@ void score_all(const std::vector<unsigned char>& grid, const int w,
 }
 
 #elif PA01_OPT_LEVEL == 6
-// ---------------------------------------------------------------------------
-// Level 6 — 검증 기반 최종 CPU (opt6_best)
-//   · n < 64  : opt2 루프 교환 + LICM (px/py 재사용)
-//   · n >= 64 : 후보(i) 단위 OpenMP + LICM (n=256 병목 대응)
-//   · prefetch / branchless 마스크 미사용 (opt3~5에서 이득 없음)
-// ---------------------------------------------------------------------------
+namespace opt6 {
+
+constexpr int kMaxStackCandidates = 256;
+constexpr int kOmpCandThreshold = 64;
+
+// opt2 동일 경계 검사 + 행 포인터 + 호출당 heap 할당 제거(스택 sums)
+void ScoreInterchange(const unsigned char* grid_data, const int* px_data,
+                      const int* py_data, const int* cx_data,
+                      const int* cy_data, float* score_out, const int n,
+                      const int p, const int w, const int h,
+                      const float inv_denom) {
+  int stack_sums[kMaxStackCandidates];
+  int* sums = stack_sums;
+  std::vector<int> heap_sums;
+  if (n > kMaxStackCandidates) {
+    heap_sums.assign(static_cast<size_t>(n), 0);
+    sums = heap_sums.data();
+  } else {
+    std::memset(stack_sums, 0, static_cast<size_t>(n) * sizeof(int));
+  }
+
+  for (int j = 0; j < p; ++j) {
+    const int px_j = px_data[j];
+    const int py_j = py_data[j];
+    for (int i = 0; i < n; ++i) {
+      const int x = px_j + cx_data[i];
+      const int y = py_j + cy_data[i];
+      if (x >= 0 && x < w && y >= 0 && y < h) {
+        const unsigned char* const row = grid_data + y * w;
+        sums[i] += row[x];
+      }
+    }
+  }
+  for (int i = 0; i < n; ++i) {
+    score_out[i] = static_cast<float>(sums[i]) * inv_denom;
+  }
+}
+
+#if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
+// n>=64: 후보별 j 루프(단일 parallel region, px/py 재읽기는 n=256에서 4코어 상쇄)
+void ScoreOmpCandidates(const unsigned char* grid_data, const int* px_data,
+                        const int* py_data, const int* cx_data,
+                        const int* cy_data, float* score_out, const int n,
+                        const int p, const int w, const int h,
+                        const float inv_denom) {
+#pragma omp parallel for schedule(static) if (n >= kOmpCandThreshold)
+  for (int i = 0; i < n; ++i) {
+    int sum = 0;
+    const int cx_i = cx_data[i];
+    const int cy_i = cy_data[i];
+    for (int j = 0; j < p; ++j) {
+      const int x = px_data[j] + cx_i;
+      const int y = py_data[j] + cy_i;
+      if (x >= 0 && x < w && y >= 0 && y < h) {
+        const unsigned char* const row = grid_data + y * w;
+        sum += row[x];
+      }
+    }
+    score_out[i] = static_cast<float>(sum) * inv_denom;
+  }
+}
+#endif
+
+}  // namespace opt6
+
+// Level 6 — opt2 검증 경로 + 메모리(스택 sums) + OpenMP(빌드 시 n>=64)
 void score_all(const std::vector<unsigned char>& grid, const int w,
                const int h, const std::vector<int>& px,
                const std::vector<int>& py, const std::vector<int>& cx,
@@ -402,7 +464,7 @@ void score_all(const std::vector<unsigned char>& grid, const int w,
   if (score == nullptr) return;
   const int n = std::min(cx.size(), cy.size());
   const int p = std::min(px.size(), py.size());
-  score->assign(n, 0.0f);
+  score->assign(static_cast<size_t>(n), 0.0f);
   if (w <= 0 || h <= 0 || p == 0 || grid.size() < static_cast<size_t>(w * h)) {
     return;
   }
@@ -413,47 +475,20 @@ void score_all(const std::vector<unsigned char>& grid, const int w,
   const int* const py_data = py.data();
   const int* const cx_data = cx.data();
   const int* const cy_data = cy.data();
+  float* const score_out = score->data();
 
   const auto t0 = std::chrono::steady_clock::now();
   const char* path_tag = "interchange";
 #if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
-  constexpr int kOmpCandThreshold = 64;
-  if (n >= kOmpCandThreshold) {
+  if (n >= opt6::kOmpCandThreshold) {
     path_tag = "omp_cand";
-#pragma omp parallel for schedule(static) if (n >= kOmpCandThreshold)
-    for (int i = 0; i < n; ++i) {
-      int sum = 0;
-      const int cx_i = cx_data[i];
-      const int cy_i = cy_data[i];
-      for (int j = 0; j < p; ++j) {
-        const int x = px_data[j] + cx_i;
-        const int y = py_data[j] + cy_i;
-        if (InBounds(x, y, w, h)) {
-          sum += grid_data[static_cast<size_t>(y) * w + x];
-        }
-      }
-      (*score)[static_cast<size_t>(i)] = static_cast<float>(sum) * inv_denom;
-    }
+    opt6::ScoreOmpCandidates(grid_data, px_data, py_data, cx_data, cy_data,
+                             score_out, n, p, w, h, inv_denom);
   } else
 #endif
   {
-    path_tag = "interchange";
-    std::vector<int> sums(static_cast<size_t>(n), 0);
-    for (int j = 0; j < p; ++j) {
-      const int px_j = px_data[j];
-      const int py_j = py_data[j];
-      for (int i = 0; i < n; ++i) {
-        const int x = px_j + cx_data[i];
-        const int y = py_j + cy_data[i];
-        if (InBounds(x, y, w, h)) {
-          sums[static_cast<size_t>(i)] += grid_data[static_cast<size_t>(y) * w + x];
-        }
-      }
-    }
-    for (int i = 0; i < n; ++i) {
-      (*score)[static_cast<size_t>(i)] =
-          static_cast<float>(sums[static_cast<size_t>(i)]) * inv_denom;
-    }
+    opt6::ScoreInterchange(grid_data, px_data, py_data, cx_data, cy_data,
+                           score_out, n, p, w, h, inv_denom);
   }
 
   const auto t1 = std::chrono::steady_clock::now();

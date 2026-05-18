@@ -34,7 +34,18 @@ find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
   target_link_libraries(assignment_cpu_lib OpenMP::OpenMP_CXX)
   target_compile_definitions(assignment_cpu_lib PRIVATE PA01_HAS_OPENMP=1)
+else()
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag(-fopenmp COMPILER_HAS_FOPENMP)
+  if(COMPILER_HAS_FOPENMP)
+    target_compile_options(assignment_cpu_lib PRIVATE -fopenmp)
+    target_link_libraries(assignment_cpu_lib PRIVATE -fopenmp)
+    target_compile_definitions(assignment_cpu_lib PRIVATE PA01_HAS_OPENMP=1)
+  endif()
 endif()
+
+target_compile_options(assignment_cpu_lib PRIVATE
+  $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>:-O3>)
 
 target_link_libraries(assignment_cpu_lib ${catkin_LIBRARIES})
 

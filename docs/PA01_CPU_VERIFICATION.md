@@ -57,7 +57,21 @@
 
 ---
 
-## 4. Level 6 설계 근거 (`PA01_OPT_LEVEL=6`)
+## 4. opt6 v1 측정 (참고 — best 아님)
+
+| | opt2 | opt6 v1 |
+|--|------|---------|
+| summary avg | **1.999** ms/call | 2.543 ms/call |
+| cumulative | 82476 ms | 84717 ms |
+| `openmp` | — | **0** (미링크) |
+| `path` | — | 전부 `interchange` |
+
+**원인:** Jetson에서 OpenMP 미활성 + 힙 `vector` sums + opt2와 다른 경계 처리.  
+**v2 수정:** opt2 동일 interchange, 스택 sums, 행 포인터, CMake `-fopenmp` 폴백.
+
+---
+
+## 5. Level 6 설계 근거 (`PA01_OPT_LEVEL=6`)
 
 | 채택 | 기각 (0~5 실험) |
 |------|-----------------|
