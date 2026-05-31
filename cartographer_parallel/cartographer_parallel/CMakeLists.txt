@@ -6,11 +6,11 @@ option(PA02_PROFILE "Enable PA02 chrono logs (make_cand, Score, Branch, match)" 
 # PA01 CPU: catkin_make -DPA01_OPT_LEVEL=6|8
 # PA01 GPU hybrid L7: catkin_make -DPA01_OPT_LEVEL=7 -DPA01_USE_GPU=ON
 # PA01 bench hybrid L9: catkin_make -DPA01_OPT_LEVEL=9 -DPA01_USE_GPU=ON
-# L9 GPU threshold sweep: -DPA01_GPU_THRESHOLD=64 (default L7=64, L9=2048 if unset)
+# L9 GPU threshold override: -DPA01_GPU_THRESHOLD=N (default L7=64, L9=256 if unset)
 # PA02 profile baseline: -DPA01_OPT_LEVEL=7 -DPA01_USE_GPU=ON -DPA02_PROFILE=ON -DPA02_OPT_LEVEL=0
 set(PA01_OPT_LEVEL "0" CACHE STRING "score_all opt level 0..9")
 set(PA02_OPT_LEVEL "0" CACHE STRING "PA02 fast_matcher opt level 0..3")
-set(PA01_GPU_THRESHOLD "0" CACHE STRING "GPU dispatch min n (0=level default: L7 64, L9 2048)")
+set(PA01_GPU_THRESHOLD "0" CACHE STRING "GPU dispatch min n (0=level default: L7 64, L9 256)")
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -54,7 +54,7 @@ if(PA01_GPU_THRESHOLD STREQUAL "0")
   if(PA01_OPT_LEVEL STREQUAL "7")
     set(PA01_GPU_DISPATCH 64)
   elseif(PA01_OPT_LEVEL STREQUAL "9")
-    set(PA01_GPU_DISPATCH 2048)
+    set(PA01_GPU_DISPATCH 256)
   else()
     set(PA01_GPU_DISPATCH 0)
   endif()

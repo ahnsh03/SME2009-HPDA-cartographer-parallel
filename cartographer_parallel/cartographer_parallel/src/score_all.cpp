@@ -120,7 +120,7 @@ void LogLoadedOnce() {
 #if defined(PA01_GPU_DISPATCH_THRESHOLD)
             << PA01_GPU_DISPATCH_THRESHOLD
 #else
-            << 2048
+            << 256
 #endif
             << " GPU)" << std::endl;
 #elif PA01_OPT_LEVEL == 8
@@ -463,7 +463,7 @@ constexpr int kOmpMinCandidates = 64;
 #if defined(PA01_GPU_DISPATCH_THRESHOLD)
 constexpr int kGpuDispatchThreshold = PA01_GPU_DISPATCH_THRESHOLD;
 #elif PA01_OPT_LEVEL == 9
-constexpr int kGpuDispatchThreshold = 2048;
+constexpr int kGpuDispatchThreshold = 256;
 #else
 constexpr int kGpuDispatchThreshold = kLargeCandThreshold;
 #endif

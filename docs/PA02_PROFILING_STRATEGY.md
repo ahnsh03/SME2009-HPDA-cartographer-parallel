@@ -48,7 +48,7 @@ Score GPU batch 임계·OpenMP 임계는 **bag sweep + microbench `--baglike`** 
 
 ```bash
 cd /root/catkin_ws
-catkin_make -DPA01_OPT_LEVEL=7 -DPA01_USE_GPU=ON \
+catkin_make -DPA01_OPT_LEVEL=9 -DPA01_USE_GPU=ON \
   -DPA02_PROFILE=ON -DPA02_OPT_LEVEL=0
 source devel/setup.bash
 export ROS_IP=192.168.0.104
