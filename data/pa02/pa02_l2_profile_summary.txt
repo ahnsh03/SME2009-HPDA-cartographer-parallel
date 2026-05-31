@@ -1,0 +1,13 @@
+# PA02 profile summary 2026-05-31T14:46:09+00:00
+## score_all
+[score_all] opt=opt9_hybrid_bench level=9 | call=107953 | elapsed=0.080 ms (80 us) | n=4 p=1081 | map=467x314 | work_units(n*p)=4324 | us_per_candidate=20.000 | cumulative=35043.199 ms / 107953 calls (avg=0.325 ms/call) | path=n4 | cuda=1
+## make_cand
+[make_cand] opt=pa02_l2_branch level=2 | call=32820 | elapsed=0.024 ms (24 us) | cumulative=781.122 ms / 32820 calls (avg=0.024 ms/call) | n_added=256 | bounds=[-60..60,-60..60] | step=8 | grid_span=16x16
+## MakeLowCands
+[MakeLowCands] opt=pa02_l2_branch level=2 | call=2188 | elapsed=2.495 ms (2495 us) | cumulative=5536.644 ms / 2188 calls (avg=2.530 ms/call) | n_scans=15 | depth=3 | n_total=3840
+## Score
+[Score] opt=pa02_l2_branch level=2 | call=77321 | elapsed=0.223 ms (223 us) | cumulative=60434.129 ms / 77321 calls (avg=0.782 ms/call) | n_cand=4 | n_scans=15 | scans_scored=1 | grid=467x314
+## Branch
+[Branch] opt=pa02_l2_branch level=2 | call=77321 | elapsed=29.003 ms (29003 us) | cumulative=45301.218 ms / 77321 calls (avg=0.586 ms/call) | depth=3 | cand_in=3840 | child_gen=200 | min_score=0.050 | best_out=0.783
+## match
+[match] opt=pa02_l2_branch level=2 | call=2188 | elapsed=54.221 ms (54221 us) | cumulative=89925.609 ms / 2188 calls (avg=41.099 ms/call) | n_scans=15 | coarse_n=3840 | branch_depth=3 | global=0 | ok=1 | best_score=0.783
