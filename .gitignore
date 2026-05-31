@@ -17,6 +17,11 @@ data/pa01_opt7_gpu_hybrid_clean.log
 data/pa01_opt8_cpu_slam_clean.log
 data/pa01_opt9_hybrid_bench_clean.log
 
+# PA02 bag run logs (keep summary/env; large clean/run in data/pa02/)
+data/pa02/*_clean.log
+data/pa02/*_run.log
+data/pa02/*_all_clean.log
+
 # 강의 PDF (용량)
 *.pdf
 
