@@ -4,7 +4,7 @@
 # Example: pa02_bag_profile.sh pa02_l0_profile
 #
 # Prerequisite: catkin_make with PA02_PROFILE=ON already done.
-set -euo pipefail
+set -eo pipefail
 
 RUN="${1:-pa02_l0_profile}"
 PA01_LEVEL="${PA01_LEVEL:-9}"
@@ -14,20 +14,23 @@ mkdir -p "${DATA_DIR}"
 
 cd /root/catkin_ws
 source /opt/ros/melodic/setup.bash
+set +u
 source /root/.bashrc 2>/dev/null || true
+set -u
 source devel/setup.bash
+
+export ROS_MASTER_URI="${ROS_MASTER_URI:-http://192.168.0.106:11311}"
+export ROS_IP="${ROS_IP:-192.168.0.104}"
 
 {
   date -Iseconds
   echo "RUN=${RUN}"
   echo "PA01_OPT_LEVEL=${PA01_LEVEL}"
   echo "PA02_OPT_LEVEL=${PA02_OPT_LEVEL:-unknown}"
-  echo "ROS_IP=${ROS_IP:-unset}"
+  echo "ROS_MASTER_URI=${ROS_MASTER_URI}"
+  echo "ROS_IP=${ROS_IP}"
   grep -E 'PA01_OPT_LEVEL|PA02_OPT_LEVEL|PA02_PROFILE|PA01_GPU' build/CMakeCache.txt 2>/dev/null || true
 } | tee "${DATA_DIR}/${RUN}_env.txt"
-
-export ROS_IP="${ROS_IP:-192.168.0.104}"
-
 echo "=== PA02 profile bag run=${RUN} ==="
 roslaunch cartographer_parallel cartographer_parallel_with_bag.launch ns:="student_19" \
   2>&1 | tee "${DATA_DIR}/${RUN}_run.log"
