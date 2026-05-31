@@ -27,9 +27,9 @@ inline const char* OptTag() {
     case 1: return "pa02_l1_make_cand";
     case 2: return "pa02_l2_branch";
     case 3: return "pa02_l3_score";
-    case 4: return "pa02_l4_shrink_bounds";
-    case 5: return "pa02_l5_exact_reserve";
-    case 6: return "pa02_l6_score_tweak";
+    case 4: return "pa02_l4_exact_reserve";
+    case 5: return "pa02_l5_score_tweak";
+    case 6: return "pa02_l6_unused";
     default: return "pa02_unknown";
   }
 }

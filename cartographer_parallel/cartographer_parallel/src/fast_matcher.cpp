@@ -244,14 +244,10 @@ std::vector<FastMatcher::Bounds> FastMatcher::MakeBounds(
       b.max_x = lin;
       b.min_y = -lin;
       b.max_y = lin;
-#if PA02_OPT_LEVEL < 4
-      // Legacy local window: fixed ±lin (no per-scan map clamp).
       bounds[s] = b;
       continue;
-#endif
     }
 
-    // Full-map and L4+ local: ShrinkToFit per scan (Cartographer correlative_scan_matcher_2d).
     for (size_t i = 0; i < scans[s].x.size(); ++i) {
       b.min_x = std::max(b.min_x, -scans[s].x[i]);
       b.max_x = std::min(b.max_x, w_ - 1 - scans[s].x[i]);
@@ -297,7 +293,7 @@ std::vector<FastMatcher::Cand> FastMatcher::MakeLowCands(
 #endif
   const int step = 1 << depth;
   std::vector<Cand> out;
-#if PA02_OPT_LEVEL >= 5
+#if PA02_OPT_LEVEL >= 4
   size_t total = 0;
   for (size_t s = 0; s < bounds.size(); ++s) {
     if (bounds[s].min_x > bounds[s].max_x ||
@@ -377,7 +373,7 @@ void FastMatcher::Score(const Grid& grid, const std::vector<Scan>& scans,
 #endif
     cx.resize(nb);
     cy.resize(nb);
-#if PA02_OPT_LEVEL >= 6
+#if PA02_OPT_LEVEL >= 5
     if (scores.size() != nb) {
       scores.resize(nb);
     }
@@ -419,7 +415,7 @@ void FastMatcher::Score(const Grid& grid, const std::vector<Scan>& scans,
   }
 #endif
 
-#if PA02_OPT_LEVEL >= 6
+#if PA02_OPT_LEVEL >= 5
   if (cand->size() > 1) {
     std::sort(cand->begin(), cand->end(),
               [](const Cand& a, const Cand& b) { return a.score > b.score; });
