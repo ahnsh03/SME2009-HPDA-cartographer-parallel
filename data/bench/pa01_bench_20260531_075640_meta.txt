@@ -1,0 +1,11 @@
+timestamp=20260531_075643
+PA01_OPT_LEVEL=7
+map=467x314
+p=1081
+warmup=5
+iters=50
+sweep_n_max=4096
+hybrid_dispatch_threshold=64
+cpu_path=n4|omp(n>=8)|interchange
+gpu_path=shared_mem_px_py|persistent_device_buffers
+gpu_min_n=1 (no API threshold)

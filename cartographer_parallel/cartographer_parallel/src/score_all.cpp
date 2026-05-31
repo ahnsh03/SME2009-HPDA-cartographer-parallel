@@ -1,4 +1,5 @@
 #include "cartographer_parallel/assignment.h"
+#include "cartographer_parallel/pa02_timing.h"
 
 #include <algorithm>
 #include <chrono>
@@ -21,9 +22,9 @@
 #define PA01_DO_LOG 1
 #endif
 
-#if PA01_OPT_LEVEL == 7
+#if PA01_OPT_LEVEL == 7 || PA01_OPT_LEVEL == 9
 #if !defined(PA01_USE_GPU)
-#error "PA01_OPT_LEVEL=7 requires catkin_make -DPA01_USE_GPU=ON"
+#error "PA01_OPT_LEVEL=7 or 9 requires catkin_make -DPA01_USE_GPU=ON"
 #endif
 #include "cartographer_parallel/score_all_cuda.h"
 #endif
@@ -41,6 +42,8 @@ const char* OptTag() {
     case 5: return "opt5_all_cpu";
     case 6: return "opt6_best";
     case 7: return "opt7_gpu_hybrid";
+    case 8: return "opt8_cpu_slam";
+    case 9: return "opt9_hybrid_bench";
     default: return "unknown";
   }
 }
@@ -111,6 +114,18 @@ void LogLoadedOnce() {
 #if PA01_OPT_LEVEL == 7
   std::cerr << "[score_all] LOADED opt=" << OptTag() << " level=" << PA01_OPT_LEVEL
             << " cuda=1 (hybrid: n=4 CPU, n>=64 GPU)" << std::endl;
+#elif PA01_OPT_LEVEL == 9
+  std::cerr << "[score_all] LOADED opt=" << OptTag() << " level=" << PA01_OPT_LEVEL
+            << " cuda=1 (hybrid: n=4 CPU, n>="
+#if defined(PA01_GPU_DISPATCH_THRESHOLD)
+            << PA01_GPU_DISPATCH_THRESHOLD
+#else
+            << 2048
+#endif
+            << " GPU)" << std::endl;
+#elif PA01_OPT_LEVEL == 8
+  std::cerr << "[score_all] LOADED opt=" << OptTag() << " level=" << PA01_OPT_LEVEL
+            << " (cpu_slam: n=4 N4, n>=8 OpenMP, no GPU)" << std::endl;
 #elif defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
   std::cerr << "[score_all] LOADED opt=" << OptTag() << " level=" << PA01_OPT_LEVEL
             << " openmp=1" << std::endl;
@@ -128,12 +143,21 @@ void make_cand(const int min_x, const int max_x, const int min_y,
                const int max_y, const int step, std::vector<int>* const cx,
                std::vector<int>* const cy) {
   if (cx == nullptr || cy == nullptr || step <= 0) return;
+#if PA02_DO_LOG
+  const size_t base = cx->size();
+  pa02_timing::ScopedTimer timer;
+#endif
   for (int x = min_x; x <= max_x; x += step) {
     for (int y = min_y; y <= max_y; y += step) {
       cx->push_back(x);
       cy->push_back(y);
     }
   }
+#if PA02_DO_LOG
+  pa02_timing::LogMakeCand(timer.ElapsedUs(),
+                           static_cast<int>(cx->size() - base), min_x, max_x,
+                           min_y, max_y, step);
+#endif
 }
 
 #if PA01_OPT_LEVEL == 0
@@ -422,12 +446,30 @@ void score_all(const std::vector<unsigned char>& grid, const int w,
                 .count());
 }
 
-#elif PA01_OPT_LEVEL == 6 || PA01_OPT_LEVEL == 7
+#elif PA01_OPT_LEVEL >= 6 && PA01_OPT_LEVEL <= 9
 
 namespace opt6 {
 
 constexpr int kMaxStackCandidates = 256;
 constexpr int kLargeCandThreshold = 64;
+
+#if PA01_OPT_LEVEL == 8 || PA01_OPT_LEVEL == 9
+constexpr int kOmpMinCandidates = 8;
+#else
+constexpr int kOmpMinCandidates = 64;
+#endif
+
+#if PA01_OPT_LEVEL == 7 || PA01_OPT_LEVEL == 9
+#if defined(PA01_GPU_DISPATCH_THRESHOLD)
+constexpr int kGpuDispatchThreshold = PA01_GPU_DISPATCH_THRESHOLD;
+#elif PA01_OPT_LEVEL == 9
+constexpr int kGpuDispatchThreshold = 2048;
+#else
+constexpr int kGpuDispatchThreshold = kLargeCandThreshold;
+#endif
+#else
+constexpr int kGpuDispatchThreshold = 0;  // 0 = never dispatch GPU
+#endif
 
 inline void AccumulateInBounds(const unsigned char* grid_data, const int w,
                                const int h, const int x, const int y,
@@ -503,8 +545,7 @@ void ScoreInterchange(const unsigned char* __restrict grid_data,
   }
 }
 
-#if (PA01_OPT_LEVEL == 6 || \
-     (PA01_OPT_LEVEL == 7 && defined(PA01_BENCH_API))) && \
+#if PA01_OPT_LEVEL >= 6 && PA01_OPT_LEVEL <= 9 && \
     defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
 void ScoreOmpCandidates(const unsigned char* __restrict grid_data,
                         const int* __restrict px_data,
@@ -513,9 +554,7 @@ void ScoreOmpCandidates(const unsigned char* __restrict grid_data,
                         const int* __restrict cy_data,
                         float* __restrict score_out, const int n, const int p,
                         const int w, const int h, const float inv_denom) {
-  // dynamic,64: 손재호 — 부하 균형·오버헤드 절충 (large n).
-  // guided,32: 김은서 — 매우 큰 n에서도 유효.
-#pragma omp parallel for schedule(dynamic, 64) if (n >= 8)
+#pragma omp parallel for schedule(dynamic, 64) if (n >= kOmpMinCandidates)
   for (int i = 0; i < n; ++i) {
     int sum = 0;
     const int cx_i = cx_data[i];
@@ -543,15 +582,16 @@ const char* Dispatch(const unsigned char* grid_data, const int* px_data,
             inv_denom);
     return "n4";
   }
-#if PA01_OPT_LEVEL == 7
-  if (n >= kLargeCandThreshold &&
+#if (PA01_OPT_LEVEL == 7 || PA01_OPT_LEVEL == 9) && defined(PA01_USE_GPU)
+  if (kGpuDispatchThreshold > 0 && n >= kGpuDispatchThreshold &&
       score_all_cuda::ScoreCandidates(grid_data, w, h, px_data, py_data, p,
                                       cx_data, cy_data, n, inv_denom,
                                       score_out)) {
     return "cuda";
   }
-#elif defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
-  if (n >= kLargeCandThreshold) {
+#endif
+#if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
+  if (n >= kOmpMinCandidates) {
     ScoreOmpCandidates(grid_data, px_data, py_data, cx_data, cy_data, score_out,
                        n, p, w, h, inv_denom);
     return "omp_cand";
@@ -603,7 +643,7 @@ void score_all(const std::vector<unsigned char>& grid, const int w,
 #if PA01_DO_LOG
   const long long elapsed_us =
       std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
-#if PA01_OPT_LEVEL == 7
+#if PA01_OPT_LEVEL == 7 || PA01_OPT_LEVEL == 9
   LogTiming(n, p, w, h, elapsed_us, path_tag, -1, 1);
 #elif defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
   LogTiming(n, p, w, h, elapsed_us, path_tag, 1, -1);
@@ -637,7 +677,7 @@ void ScoreCpu(const unsigned char* grid, const int w, const int h,
                          inv_denom);
 }
 
-#if PA01_OPT_LEVEL == 7
+#if (PA01_OPT_LEVEL == 7 || PA01_OPT_LEVEL == 9) && defined(PA01_USE_GPU)
 bool GpuAvailable() { return score_all_cuda::IsAvailable(); }
 
 bool ScoreGpu(const unsigned char* grid, const int w, const int h,
@@ -654,7 +694,7 @@ bool ScoreGpu(const unsigned char* grid, const int w, const int h,
 #endif  // PA01_BENCH_API
 
 #else
-#error "PA01_OPT_LEVEL must be 0..7 (level 7 needs -DPA01_USE_GPU=ON)"
+#error "PA01_OPT_LEVEL must be 0..9 (levels 7,9 need -DPA01_USE_GPU=ON for CUDA)"
 #endif
 
 }  // namespace cartographer_parallel

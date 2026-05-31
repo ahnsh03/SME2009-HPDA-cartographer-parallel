@@ -1,9 +1,11 @@
 #include "cartographer_parallel/fast_matcher.h"
 
 #include "cartographer_parallel/assignment.h"
+#include "cartographer_parallel/pa02_timing.h"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -275,6 +277,9 @@ std::vector<FastMatcher::Grid> FastMatcher::MakeGridStack() const {
 
 std::vector<FastMatcher::Cand> FastMatcher::MakeLowCands(
     const std::vector<Bounds>& bounds, const int depth) const {
+#if PA02_DO_LOG
+  pa02_timing::ScopedTimer timer;
+#endif
   const int step = 1 << depth;
   std::vector<Cand> out;
   for (size_t s = 0; s < bounds.size(); ++s) {
@@ -294,12 +299,20 @@ std::vector<FastMatcher::Cand> FastMatcher::MakeLowCands(
       out.push_back(c);
     }
   }
+#if PA02_DO_LOG
+  pa02_timing::LogMakeLowCands(timer.ElapsedUs(), static_cast<int>(bounds.size()),
+                               depth, static_cast<int>(out.size()));
+#endif
   return out;
 }
 
 void FastMatcher::Score(const Grid& grid, const std::vector<Scan>& scans,
                         std::vector<Cand>* const cand) const {
   if (cand == nullptr || cand->empty()) return;
+#if PA02_DO_LOG
+  pa02_timing::ScopedTimer timer;
+  int scans_scored = 0;
+#endif
   for (size_t s = 0; s < scans.size(); ++s) {
     std::vector<int> ids;
     std::vector<int> cx;
@@ -312,6 +325,9 @@ void FastMatcher::Score(const Grid& grid, const std::vector<Scan>& scans,
       }
     }
     if (ids.empty()) continue;
+#if PA02_DO_LOG
+    ++scans_scored;
+#endif
     std::vector<float> score;
     score_all(grid.cell, grid.w, grid.h, scans[s].x, scans[s].y, cx, cy,
               &score);
@@ -321,6 +337,11 @@ void FastMatcher::Score(const Grid& grid, const std::vector<Scan>& scans,
   }
   std::sort(cand->begin(), cand->end(),
             [](const Cand& a, const Cand& b) { return a.score > b.score; });
+#if PA02_DO_LOG
+  pa02_timing::LogScore(timer.ElapsedUs(), static_cast<int>(cand->size()),
+                        static_cast<int>(scans.size()), scans_scored, grid.w,
+                        grid.h);
+#endif
 }
 
 FastMatcher::Cand FastMatcher::Branch(const std::vector<Grid>& grids,
@@ -329,12 +350,26 @@ FastMatcher::Cand FastMatcher::Branch(const std::vector<Grid>& grids,
                                       const std::vector<Cand>& cand,
                                       const int depth,
                                       const float min_score) const {
+#if PA02_DO_LOG
+  pa02_timing::ScopedTimer timer;
+  int child_gen = 0;
+#endif
   if (cand.empty()) {
     Cand empty;
     empty.score = 0.0f;
+#if PA02_DO_LOG
+    pa02_timing::LogBranch(timer.ElapsedUs(), depth, 0, 0, min_score, 0.0f);
+#endif
     return empty;
   }
-  if (depth == 0) return cand.front();
+  if (depth == 0) {
+#if PA02_DO_LOG
+    pa02_timing::LogBranch(timer.ElapsedUs(), depth,
+                           static_cast<int>(cand.size()), 0, min_score,
+                           cand.front().score);
+#endif
+    return cand.front();
+  }
 
   Cand best;
   best.score = min_score;
@@ -351,6 +386,9 @@ FastMatcher::Cand FastMatcher::Branch(const std::vector<Grid>& grids,
         next.x = c.x + dx;
         next.y = c.y + dy;
         child.push_back(next);
+#if PA02_DO_LOG
+        ++child_gen;
+#endif
       }
     }
     Score(grids[depth - 1], scans, &child);
@@ -358,6 +396,10 @@ FastMatcher::Cand FastMatcher::Branch(const std::vector<Grid>& grids,
                                 best.score);
     if (refined.score > best.score) best = refined;
   }
+#if PA02_DO_LOG
+  pa02_timing::LogBranch(timer.ElapsedUs(), depth, static_cast<int>(cand.size()),
+                         child_gen, min_score, best.score);
+#endif
   return best;
 }
 
@@ -388,6 +430,11 @@ bool FastMatcher::MatchWithWindow(const std::vector<float>& xs,
   if (out == nullptr) return false;
   *out = MatchOut();
   if (!has_map() || xs.empty() || ys.empty()) return false;
+
+#if PA02_DO_LOG
+  pa02_timing::LogLoadedOnce();
+  pa02_timing::ScopedTimer timer;
+#endif
 
   int num_ang = 0;
   double step = 0.0;
@@ -422,6 +469,11 @@ bool FastMatcher::MatchWithWindow(const std::vector<float>& xs,
   for (int i = 0; i < n; ++i) {
     out->cand.push_back(ToOut(coarse[i], init, num_ang, step));
   }
+#if PA02_DO_LOG
+  pa02_timing::LogMatch(timer.ElapsedUs(), static_cast<int>(scans.size()),
+                        static_cast<int>(coarse.size()), max_depth,
+                        full_map ? 1 : 0, best.score, out->ok ? 1 : 0);
+#endif
   return out->ok;
 }
 

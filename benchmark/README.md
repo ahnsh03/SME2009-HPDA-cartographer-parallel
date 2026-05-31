@@ -36,6 +36,29 @@ make sweep6
 | **Production L7** | dispatch만 n=4 CPU / n≥64 GPU (threshold=64) |
 | **verify** | CPU vs GPU `max_diff` (기대: 0) |
 | **timing** | warmup 후 반복 평균 ms/call (bag cumulative 아님) |
+| **bag-like** | `--baglike`: **호출 1회씩** 측정 후 평균 (OpenMP 진입 비용 포함) |
+
+## bag-like crossover (SLAM bag 조건에 가깝게)
+
+연속 배치 평균(`080435`, crossover≈2048)과 달리, SLAM bag은 `score_all`을 **흩어진 단발 호출**로 부릅니다.
+
+```bash
+cd benchmark
+chmod +x run_baglike.sh
+./run_baglike.sh
+# 또는 Jetson:
+# BENCH_OUT=$HOME/pa01_bench_data make sweep-baglike7
+```
+
+출력: `data/bench/pa01_baglike_*_{meta,sweep,summary}.txt`  
+`gpu_crossover_n` → **bag 환경에 맞는 hybrid threshold** 후보.
+
+| 모드 | 측정 | crossover 의미 |
+|------|------|----------------|
+| `--sweep` (기본) | 50회 연속 / 평균 | 격리 커널 비교 |
+| `--baglike` | 100회 **단발** / 평균 | bag OpenMP·GPU cache 패턴에 가까움 |
+
+bag 로그 spot check: n=256 CPU ~1.9 ms (L8), GPU ~0.9 ms (L7).
 
 ## n 스윕 출력
 

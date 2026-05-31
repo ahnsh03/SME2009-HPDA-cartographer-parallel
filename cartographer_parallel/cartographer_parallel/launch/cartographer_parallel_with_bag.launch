@@ -36,6 +36,7 @@
     </include>
 
     <node pkg="rosbag" type="play" name="scan_bag_play" output="screen"
+          required="true"
           args="$(arg bag_file) /scan:=scan" />
   </group>
 </launch>

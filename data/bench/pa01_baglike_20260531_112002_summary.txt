@@ -1,0 +1,7 @@
+# gpu_crossover: first n where cpu/gpu < 1.0 (GPU faster)
+gpu_crossover_n=512
+recommend_hybrid: CPU for n<512, GPU for n>=512
+last_n_cpu_wins=256
+production_dispatch_threshold=64
+spot_n=4 cpu_ms=0.0204 gpu_ms=0.7694 cpu/gpu=0.0265 winner=cpu
+spot_n=256 cpu_ms=0.6414 gpu_ms=0.7198 cpu/gpu=0.8911 winner=cpu

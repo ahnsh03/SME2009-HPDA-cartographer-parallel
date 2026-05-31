@@ -14,8 +14,10 @@ else
 PKG := ../cartographer_parallel/cartographer_parallel
 endif
 SRC := $(PKG)/src/score_all.cpp
+MATCHER_SRC := $(PKG)/src/fast_matcher.cpp
 CUDA_SRC := $(PKG)/src/score_all_cuda.cu
 INC := -I$(PKG)/include
+YAML ?= $(PKG)/maps/0501.yaml
 
 CXX ?= g++
 NVCC ?= nvcc
@@ -41,7 +43,7 @@ else
   OMP_LD :=
 endif
 
-.PHONY: all clean microbench6 microbench7 sweep6 sweep7 verify compare legacy
+.PHONY: all clean microbench6 microbench7 sweep6 sweep7 verify compare legacy baglike7 sweep-baglike7 pa02_microbench pa02_sweep
 
 all: microbench6
 
@@ -74,11 +76,36 @@ sweep-log7: microbench7
 	@echo "=== CSV in $(BENCH_OUT)/ ==="
 	@ls -lt $(BENCH_OUT)/pa01_bench_* 2>/dev/null | head -6 || true
 
+# Bag-like: per-call timing (OpenMP fork each sample), same p=1081 as SLAM bag.
+baglike7: microbench7
+	./microbench7 --map $(MAP) --baglike --sweep --sweep-n-max 4096 \
+		--warmup 10 --iters 100 --gap-ms 0
+
+sweep-baglike7: microbench7
+	@mkdir -p $(BENCH_OUT)
+	./microbench7 --map $(MAP) --baglike --sweep --sweep-n-max 4096 \
+		--warmup 10 --iters 100 --gap-ms 0 \
+		--out $(BENCH_OUT)/pa01_baglike_$$(date +%Y%m%d_%H%M%S)
+	@echo "=== bag-like CSV in $(BENCH_OUT)/ ==="
+	@ls -lt $(BENCH_OUT)/pa01_baglike_* 2>/dev/null | head -6 || true
+
 verify: microbench7
 	./microbench7 --map $(MAP) --verify --warmup 5 --iters 50
 
 compare: microbench6 microbench7 verify sweep7
 	@echo "=== done: see sweep CSV above for GPU crossover ==="
+
+# PA02: make_cand + MatchWithWindow (no ROS). CPU L6 score_all baseline inside matcher.
+pa02_microbench: pa02_microbench.cpp $(SRC) $(MATCHER_SRC)
+	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=6 -DPA02_NO_LOG=1 -DPA02_OPT_LEVEL=0 $(OMP_CXX) \
+		$(SRC) $(MATCHER_SRC) pa02_microbench.cpp -o $@ $(OMP_LD)
+	@echo "=== pa02_microbench (make_cand + match, PA01 L6 inside) ==="
+	./pa02_microbench --yaml $(YAML) --mode make_cand --sweep --warmup 3 --iters 30
+	./pa02_microbench --yaml $(YAML) --mode match --warmup 2 --iters 10
+
+pa02_sweep: pa02_microbench
+	./pa02_microbench --yaml $(YAML) --mode make_cand --sweep --warmup 5 --iters 50
+	./pa02_microbench --yaml $(YAML) --mode match --sweep --warmup 3 --iters 20 --baglike
 
 # Legacy targets (level 0/2/6 quick bench via score_all())
 legacy: bench0 bench2 bench6
@@ -93,4 +120,4 @@ bench6: score_all_bench.cpp $(SRC)
 	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=6 $(OMP_CXX) $(SRC) score_all_bench.cpp -o $@ $(OMP_LD)
 
 clean:
-	rm -f microbench6 microbench7 bench0 bench2 bench6 verify0 verify6
+	rm -f microbench6 microbench7 pa02_microbench bench0 bench2 bench6 verify0 verify6

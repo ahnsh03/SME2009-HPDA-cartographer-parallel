@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -27,8 +28,10 @@ struct Config {
   int p = 1081;
   int warmup = 5;
   int iters = 50;
+  int gap_ms = 0;
   bool verify_only = false;
   bool sweep = false;
+  bool baglike = false;
   int sweep_n_max = 4096;
 };
 
@@ -119,6 +122,32 @@ double MeanMs(const std::function<void()>& fn, int warmup, int iters) {
          static_cast<double>(iters);
 }
 
+// Bag-like: one timed call per sample (OpenMP fork/join each sample).
+double SporadicMeanMs(const std::function<void()>& fn, int warmup, int iters,
+                      int gap_ms) {
+  for (int i = 0; i < warmup; ++i) {
+    fn();
+  }
+  double sum_ms = 0.0;
+  for (int i = 0; i < iters; ++i) {
+    const auto t0 = Clock::now();
+    fn();
+    const auto t1 = Clock::now();
+    sum_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+    if (gap_ms > 0 && i + 1 < iters) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(gap_ms));
+    }
+  }
+  return sum_ms / static_cast<double>(iters);
+}
+
+double TimeCaseMs(const std::function<void()>& fn, const Config& cfg) {
+  if (cfg.baglike) {
+    return SporadicMeanMs(fn, cfg.warmup, cfg.iters, cfg.gap_ms);
+  }
+  return MeanMs(fn, cfg.warmup, cfg.iters);
+}
+
 bool MkDirRecursive(const std::string& path) {
   if (path.empty()) return true;
   std::string cur;
@@ -149,6 +178,7 @@ void PrintUsage(const char* prog) {
   std::cerr << "Usage: " << prog
             << " [--map PATH] [--p N] [--warmup N] [--iters N]\n"
             << "       [--verify] [--sweep] [--sweep-n-max N]\n"
+            << "       [--baglike] [--gap-ms N]   sporadic per-call timing (bag-like)\n"
             << "       [--out PREFIX]   write PREFIX_meta.txt, PREFIX_sweep.csv\n";
 }
 
@@ -163,6 +193,11 @@ Config ParseArgs(int argc, char** argv) {
       cfg.verify_only = true;
     } else if (arg == "--sweep") {
       cfg.sweep = true;
+    } else if (arg == "--baglike" || arg == "--sporadic") {
+      cfg.baglike = true;
+      cfg.sweep = true;
+    } else if (arg == "--gap-ms" && i + 1 < argc) {
+      cfg.gap_ms = std::atoi(argv[++i]);
     } else if (arg == "--map" && i + 1 < argc) {
       cfg.map_path = argv[++i];
     } else if (arg == "--p" && i + 1 < argc) {
@@ -199,7 +234,7 @@ CaseResult RunCase(const std::vector<unsigned char>& grid, int w, int h,
         n, cpu_score.data());
   };
 
-  out.cpu_ms = MeanMs(run_cpu, cfg.warmup, cfg.iters);
+  out.cpu_ms = TimeCaseMs(run_cpu, cfg);
 
 #if defined(PA01_USE_GPU)
   if (!cartographer_parallel::score_all_bench::GpuAvailable()) {
@@ -222,13 +257,14 @@ CaseResult RunCase(const std::vector<unsigned char>& grid, int w, int h,
         grid.data(), w, h, px.data(), py.data(), cfg.p, cx.data(), cy.data(),
         n, gpu_score.data());
   };
-  out.gpu_ms = MeanMs(run_gpu, cfg.warmup, cfg.iters);
+  out.gpu_ms = TimeCaseMs(run_gpu, cfg);
 
   if (out.gpu_ms > 0.0) {
     const double ratio = out.cpu_ms / out.gpu_ms;
-    if (ratio >= 1.05) {
+    // ratio < 1 → CPU faster; ratio > 1 → GPU faster
+    if (ratio <= 0.95) {
       out.winner = "cpu";
-    } else if (ratio <= 0.95) {
+    } else if (ratio >= 1.05) {
       out.winner = "gpu";
     } else {
       out.winner = "tie";
@@ -273,7 +309,7 @@ SweepAnalysis AnalyzeSweep(const std::vector<CaseResult>& results) {
 #if defined(PA01_USE_GPU)
     if (!r.gpu_ok || r.gpu_ms <= 0.0) continue;
     const double ratio = r.cpu_ms / r.gpu_ms;
-    if (ratio >= 1.0) {
+    if (ratio < 1.0) {
       a.last_cpu_wins_n = r.n;
     } else {
       if (a.first_gpu_wins_n < 0) {
@@ -297,6 +333,8 @@ void WriteMeta(const std::string& path, const Config& cfg, int w, int h) {
   out << "p=" << cfg.p << "\n";
   out << "warmup=" << cfg.warmup << "\n";
   out << "iters=" << cfg.iters << "\n";
+  out << "gap_ms=" << cfg.gap_ms << "\n";
+  out << "mode=" << (cfg.baglike ? "baglike" : "continuous") << "\n";
   out << "sweep_n_max=" << cfg.sweep_n_max << "\n";
   out << "hybrid_dispatch_threshold="
       << cartographer_parallel::score_all_bench::kDefaultLargeCandThreshold
@@ -364,7 +402,13 @@ void PrintHeader(const Config& cfg, int w, int h) {
   std::cout << std::fixed << std::setprecision(4);
   std::cout << "# PA01 microbench PA01_OPT_LEVEL=" << PA01_OPT_LEVEL
             << " map=" << w << "x" << h << " p=" << cfg.p
-            << " warmup=" << cfg.warmup << " iters=" << cfg.iters << "\n";
+            << " warmup=" << cfg.warmup << " iters=" << cfg.iters;
+  if (cfg.baglike) {
+    std::cout << " mode=baglike(per_call) gap_ms=" << cfg.gap_ms;
+  } else {
+    std::cout << " mode=continuous(batch_mean)";
+  }
+  std::cout << "\n";
   std::cout << "# cpu=ScoreN4(n=4)|OpenMP(n>=8)|interchange; gpu=all n>=1 "
                "shmem+device cache\n";
   std::cout << "# hybrid dispatch threshold (score_all L7)="
@@ -414,7 +458,7 @@ void PrintSweepStdout(const std::vector<CaseResult>& results,
 }  // namespace
 
 int main(int argc, char** argv) {
-  const Config cfg = ParseArgs(argc, argv);
+  Config cfg = ParseArgs(argc, argv);
 
   std::vector<unsigned char> grid;
   int w = 467;
@@ -430,7 +474,8 @@ int main(int argc, char** argv) {
 
   std::string out_prefix = cfg.out_prefix;
   if (out_prefix.empty() && cfg.sweep) {
-    out_prefix = std::string("pa01_bench_") + Timestamp();
+    out_prefix = std::string(cfg.baglike ? "pa01_baglike_" : "pa01_bench_") +
+                 Timestamp();
   }
   if (!out_prefix.empty()) {
     const size_t slash = out_prefix.find_last_of('/');

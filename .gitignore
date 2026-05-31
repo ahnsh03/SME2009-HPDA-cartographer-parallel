@@ -3,8 +3,19 @@ benchmark/bench0
 benchmark/bench2
 benchmark/bench6
 benchmark/bench6_noomp
+benchmark/microbench6
+benchmark/microbench7
+benchmark/pa02_microbench
 benchmark/verify0
 benchmark/verify6
+
+# Large bag run logs (keep summary/csv only)
+data/bench/threshold_sweep/*_clean.log
+data/bench/threshold_sweep/*_run.log
+data/pa01_opt7_gpu_clean.log
+data/pa01_opt7_gpu_hybrid_clean.log
+data/pa01_opt8_cpu_slam_clean.log
+data/pa01_opt9_hybrid_bench_clean.log
 
 # 강의 PDF (용량)
 *.pdf

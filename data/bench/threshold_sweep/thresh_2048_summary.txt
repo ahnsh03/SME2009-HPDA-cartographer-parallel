@@ -1,0 +1,1 @@
+[score_all] opt=opt9_hybrid_bench level=9 | call=86181 | elapsed=0.086 ms (86 us) | n=4 p=1081 | map=467x314 | work_units(n*p)=4324 | us_per_candidate=21.500 | cumulative=51560.379 ms / 86181 calls (avg=0.598 ms/call) | path=n4 | cuda=1
