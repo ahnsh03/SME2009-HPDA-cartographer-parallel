@@ -27,7 +27,6 @@ echo "--- 1. score_all path breakdown (bag logs) ---" | tee -a "${OUT}/README.tx
 if ls "${DATA_PA02}"/*_score_all_clean.log >/dev/null 2>&1; then
   python3 "${ROOT}/scripts/pa02_analyze_score_paths.py" --all \
     --data-dir "${DATA_PA02}" --out "${OUT}/score_paths_bag.txt"
-  cp "${OUT}/score_paths_bag.txt" "${OUT}/score_paths_bag.txt"
 else
   echo "  (no local bag logs; fetch from Jetson data/pa02/)" | tee -a "${OUT}/README.txt"
 fi
