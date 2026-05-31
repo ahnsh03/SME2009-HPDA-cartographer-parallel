@@ -21,6 +21,13 @@
 #define PA01_DO_LOG 1
 #endif
 
+#if PA01_OPT_LEVEL == 7
+#if !defined(PA01_USE_GPU)
+#error "PA01_OPT_LEVEL=7 requires catkin_make -DPA01_USE_GPU=ON"
+#endif
+#include "cartographer_parallel/score_all_cuda.h"
+#endif
+
 namespace cartographer_parallel {
 namespace {
 
@@ -33,6 +40,7 @@ const char* OptTag() {
     case 4: return "opt4_branchless";
     case 5: return "opt5_all_cpu";
     case 6: return "opt6_best";
+    case 7: return "opt7_gpu_hybrid";
     default: return "unknown";
   }
 }
@@ -45,7 +53,7 @@ inline bool InBounds(const int x, const int y, const int w, const int h) {
 
 void LogTiming(const int n, const int p, const int w, const int h,
                const long long elapsed_us, const char* path_tag = nullptr,
-               const int openmp_enabled = -1) {
+               const int openmp_enabled = -1, const int cuda_enabled = -1) {
 #if !PA01_DO_LOG
   (void)n;
   (void)p;
@@ -54,6 +62,7 @@ void LogTiming(const int n, const int p, const int w, const int h,
   (void)elapsed_us;
   (void)path_tag;
   (void)openmp_enabled;
+  (void)cuda_enabled;
   return;
 #endif
   static unsigned long long call_count = 0;
@@ -87,6 +96,9 @@ void LogTiming(const int n, const int p, const int w, const int h,
   if (openmp_enabled >= 0) {
     std::cerr << " | openmp=" << openmp_enabled;
   }
+  if (cuda_enabled >= 0) {
+    std::cerr << " | cuda=" << cuda_enabled;
+  }
   std::cerr << std::endl;
   std::cerr.flush();
 }
@@ -96,7 +108,10 @@ void LogLoadedOnce() {
   static bool logged = false;
   if (logged) return;
   logged = true;
-#if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
+#if PA01_OPT_LEVEL == 7
+  std::cerr << "[score_all] LOADED opt=" << OptTag() << " level=" << PA01_OPT_LEVEL
+            << " cuda=1 (hybrid: n=4 CPU, n>=64 GPU)" << std::endl;
+#elif defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
   std::cerr << "[score_all] LOADED opt=" << OptTag() << " level=" << PA01_OPT_LEVEL
             << " openmp=1" << std::endl;
 #else
@@ -407,11 +422,12 @@ void score_all(const std::vector<unsigned char>& grid, const int w,
                 .count());
 }
 
-#elif PA01_OPT_LEVEL == 6
+#elif PA01_OPT_LEVEL == 6 || PA01_OPT_LEVEL == 7
+
 namespace opt6 {
 
 constexpr int kMaxStackCandidates = 256;
-constexpr int kOmpCandThreshold = 64;
+constexpr int kLargeCandThreshold = 64;
 
 inline void AccumulateInBounds(const unsigned char* grid_data, const int w,
                                const int h, const int x, const int y,
@@ -487,7 +503,9 @@ void ScoreInterchange(const unsigned char* __restrict grid_data,
   }
 }
 
-#if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
+#if (PA01_OPT_LEVEL == 6 || \
+     (PA01_OPT_LEVEL == 7 && defined(PA01_BENCH_API))) && \
+    defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
 void ScoreOmpCandidates(const unsigned char* __restrict grid_data,
                         const int* __restrict px_data,
                         const int* __restrict py_data,
@@ -495,7 +513,7 @@ void ScoreOmpCandidates(const unsigned char* __restrict grid_data,
                         const int* __restrict cy_data,
                         float* __restrict score_out, const int n, const int p,
                         const int w, const int h, const float inv_denom) {
-#pragma omp parallel for schedule(static) if (n >= kOmpCandThreshold)
+#pragma omp parallel for schedule(static) if (n >= kLargeCandThreshold)
   for (int i = 0; i < n; ++i) {
     int sum = 0;
     const int cx_i = cx_data[i];
@@ -523,8 +541,15 @@ const char* Dispatch(const unsigned char* grid_data, const int* px_data,
             inv_denom);
     return "n4";
   }
-#if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
-  if (n >= kOmpCandThreshold) {
+#if PA01_OPT_LEVEL == 7
+  if (n >= kLargeCandThreshold &&
+      score_all_cuda::ScoreCandidates(grid_data, w, h, px_data, py_data, p,
+                                      cx_data, cy_data, n, inv_denom,
+                                      score_out)) {
+    return "cuda";
+  }
+#elif defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
+  if (n >= kLargeCandThreshold) {
     ScoreOmpCandidates(grid_data, px_data, py_data, cx_data, cy_data, score_out,
                        n, p, w, h, inv_denom);
     return "omp_cand";
@@ -565,24 +590,68 @@ void score_all(const std::vector<unsigned char>& grid, const int w,
 
 #if PA01_DO_LOG
   const auto t0 = std::chrono::steady_clock::now();
-#endif
   const char* path_tag =
       opt6::Dispatch(grid_data, px_data, py_data, cx_data, cy_data, score_out,
                      n, p, w, h, inv_denom);
-#if PA01_DO_LOG
   const auto t1 = std::chrono::steady_clock::now();
+#else
+  opt6::Dispatch(grid_data, px_data, py_data, cx_data, cy_data, score_out, n, p,
+                 w, h, inv_denom);
+#endif
+#if PA01_DO_LOG
   const long long elapsed_us =
       std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
-#if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
-  LogTiming(n, p, w, h, elapsed_us, path_tag, 1);
+#if PA01_OPT_LEVEL == 7
+  LogTiming(n, p, w, h, elapsed_us, path_tag, -1, 1);
+#elif defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
+  LogTiming(n, p, w, h, elapsed_us, path_tag, 1, -1);
 #else
-  LogTiming(n, p, w, h, elapsed_us, path_tag, 0);
+  LogTiming(n, p, w, h, elapsed_us, path_tag, 0, -1);
 #endif
 #endif
 }
 
+#if defined(PA01_BENCH_API)
+
+namespace score_all_bench {
+
+void ScoreCpu(const unsigned char* grid, const int w, const int h,
+              const int* px, const int* py, const int p, const int* cx,
+              const int* cy, const int n, float* score_out) {
+  const float inv_denom = 1.0f / (255.0f * static_cast<float>(p));
+  if (n == 4) {
+    opt6::ScoreN4(grid, px, py, cx, cy, score_out, p, w, h, inv_denom);
+    return;
+  }
+#if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
+  if (n >= opt6::kLargeCandThreshold) {
+    opt6::ScoreOmpCandidates(grid, px, py, cx, cy, score_out, n, p, w, h,
+                             inv_denom);
+    return;
+  }
+#endif
+  opt6::ScoreInterchange(grid, px, py, cx, cy, score_out, n, p, w, h,
+                         inv_denom);
+}
+
+#if PA01_OPT_LEVEL == 7
+bool GpuAvailable() { return score_all_cuda::IsAvailable(); }
+
+bool ScoreGpu(const unsigned char* grid, const int w, const int h,
+              const int* px, const int* py, const int p, const int* cx,
+              const int* cy, const int n, float* score_out) {
+  const float inv_denom = 1.0f / (255.0f * static_cast<float>(p));
+  return score_all_cuda::ScoreCandidates(grid, w, h, px, py, p, cx, cy, n,
+                                         inv_denom, score_out);
+}
+#endif
+
+}  // namespace score_all_bench
+
+#endif  // PA01_BENCH_API
+
 #else
-#error "PA01_OPT_LEVEL must be 0..6"
+#error "PA01_OPT_LEVEL must be 0..7 (level 7 needs -DPA01_USE_GPU=ON)"
 #endif
 
 }  // namespace cartographer_parallel

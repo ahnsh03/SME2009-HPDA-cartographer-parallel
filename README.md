@@ -2,8 +2,8 @@
 
 인하대 SME2009 고성능 데이터/코드 분석 과제: Google Cartographer `fast_correlative_scan_matcher` 병렬화.
 
-- **PA01:** `score_all.cpp` CPU 최적화 (`PA01_OPT_LEVEL` 0~6, **6=최종**)
-- **PA02:** CUDA assignment (예정)
+- **PA01:** `score_all.cpp` CPU (`PA01_OPT_LEVEL` 0~6, **6=CPU 최종**) + GPU 하이브리드 (**7**)
+- **PA02:** `fast_correlative_scan_matcher` 전체 (예정)
 
 ## ROS 패키지
 
@@ -11,7 +11,8 @@
 
 ```bash
 cd ~/catkin_ws
-catkin_make -DPA01_OPT_LEVEL=6   # 0=baseline .. 6=opt6_best (OpenMP)
+catkin_make -DPA01_OPT_LEVEL=6   # CPU 최종 (OpenMP, libomp-dev)
+catkin_make -DPA01_OPT_LEVEL=7 -DPA01_USE_GPU=ON   # GPU 하이브리드 (Jetson)
 source devel/setup.bash
 export ROS_IP=<jetson_ip>
 roslaunch cartographer_parallel cartographer_parallel_with_bag.launch ns:="student_19"
@@ -21,7 +22,9 @@ roslaunch cartographer_parallel cartographer_parallel_with_bag.launch ns:="stude
 
 - `docs/CPU_OPTIMIZATION_PLAN.md` — 단계별 CPU 기법·측정 방법
 - `docs/PA01_DEVELOPMENT_LOG_PART2.md` — 환경/트러블슈팅·측정 이력 (Part 2)
-- `docs/PA01_CPU_VERIFICATION.md` — opt0~5 log/summary 검증·level6 설계 근거
+- `docs/PA01_CPU_VERIFICATION.md` — opt0~6 log/summary 검증
+- `docs/PA01_GPU.md` — level 7 빌드·측정·비교
+- `docs/PA01_DEVELOPMENT_LOG_GPU.md` — opt7 구현·트러블슈팅·데이터 검증
 
 ## 측정 데이터
 

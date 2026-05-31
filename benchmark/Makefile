@@ -1,38 +1,86 @@
+# PA01 score_all micro-benchmark (no ROS/bag)
+#
+# microbench6 — CPU L6 paths (OpenMP if available)
+# microbench7 — CPU L6 paths + CUDA ScoreCandidates (same inputs)
+#
+# Jetson: nvcc + sm_53. PC without GPU: microbench6 only.
+
+# Package path: auto-detect Jetson catkin vs PC PA01 repo layout.
+# Jetson:  ../cartographer_parallel/src/score_all.cpp
+# PC:      ../cartographer_parallel/cartographer_parallel/src/score_all.cpp
+ifneq (,$(wildcard ../cartographer_parallel/src/score_all.cpp))
+PKG := ../cartographer_parallel
+else
+PKG := ../cartographer_parallel/cartographer_parallel
+endif
+SRC := $(PKG)/src/score_all.cpp
+CUDA_SRC := $(PKG)/src/score_all_cuda.cu
+INC := -I$(PKG)/include
+
 CXX ?= g++
-ROOT := ..
-SRC := $(ROOT)/cartographer_parallel/cartographer_parallel/src/score_all.cpp
-INC := -I$(ROOT)/cartographer_parallel/cartographer_parallel/include
-CXXFLAGS := -std=c++14 -O3 -Wall -Wextra $(INC) -DPA01_NO_LOG=1
-OMPFLAGS := $(shell $(CXX) -fopenmp -dM -E - < /dev/null >/dev/null 2>&1 && echo "-fopenmp -DPA01_HAS_OPENMP=1")
+NVCC ?= nvcc
+MAP ?= $(PKG)/maps/0501.pgm
 
-.PHONY: all clean bench0 bench2 bench6
+# g++ flags
+CXXFLAGS := -std=c++14 -O3 -ffast-math -Wall -Wextra $(INC) \
+	-DPA01_NO_LOG=1 -DPA01_BENCH_API=1
 
-all: bench0 bench2 bench6
+# nvcc: no -ffast-math / -Wall on nvcc directly — use CUDA/host equivalents
+NVCCFLAGS := -std=c++14 -O3 -arch=sm_53 --use_fast_math $(INC) \
+	-DPA01_NO_LOG=1 -DPA01_BENCH_API=1 \
+	-Xcompiler=-Wall,-Wextra
+
+HAS_OPENMP := $(shell $(CXX) -fopenmp -dM -E - < /dev/null >/dev/null 2>&1 && echo 1)
+ifeq ($(HAS_OPENMP),1)
+  OMP_CXX := -fopenmp -DPA01_HAS_OPENMP=1
+  OMP_NVCC := -Xcompiler=-fopenmp -DPA01_HAS_OPENMP=1
+  OMP_LD := -lgomp
+else
+  OMP_CXX :=
+  OMP_NVCC :=
+  OMP_LD :=
+endif
+
+.PHONY: all clean microbench6 microbench7 sweep6 sweep7 verify compare legacy
+
+all: microbench6
+
+microbench6: pa01_microbench.cpp $(SRC)
+	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=6 $(OMP_CXX) \
+		$(SRC) pa01_microbench.cpp -o $@ $(OMP_LD)
+	@echo "=== microbench6 (CPU L6 paths) ==="
+	./microbench6 --map $(MAP)
+
+microbench7: pa01_microbench.cpp $(SRC) $(CUDA_SRC)
+	$(NVCC) $(NVCCFLAGS) -DPA01_OPT_LEVEL=7 -DPA01_USE_GPU=1 $(OMP_NVCC) \
+		$(SRC) $(CUDA_SRC) pa01_microbench.cpp \
+		-o $@ -lcudart $(OMP_LD)
+	@echo "=== microbench7 verify + n=4,256 ==="
+	./microbench7 --map $(MAP)
+
+sweep6: microbench6
+	./microbench6 --map $(MAP) --sweep --sweep-n-max 1024 --warmup 3 --iters 30
+
+sweep7: microbench7
+	./microbench7 --map $(MAP) --sweep --sweep-n-max 1024 --warmup 3 --iters 30
+
+verify: microbench7
+	./microbench7 --map $(MAP) --verify --warmup 5 --iters 50
+
+compare: microbench6 microbench7 verify sweep7
+	@echo "=== done: see sweep CSV above for GPU crossover ==="
+
+# Legacy targets (level 0/2/6 quick bench via score_all())
+legacy: bench0 bench2 bench6
 
 bench0: score_all_bench.cpp $(SRC)
 	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=0 $(SRC) score_all_bench.cpp -o $@
-	./bench0 $(MAP)
 
 bench2: score_all_bench.cpp $(SRC)
 	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=2 $(SRC) score_all_bench.cpp -o $@
-	./bench2 $(MAP)
 
 bench6: score_all_bench.cpp $(SRC)
-	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=6 $(OMPFLAGS) $(SRC) score_all_bench.cpp -o $@
-	./bench6 $(MAP)
-
-verify0: score_all_bench.cpp $(SRC)
-	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=0 $(SRC) verify_scores.cpp -o $@
-	./verify0
-
-verify6: score_all_bench.cpp $(SRC)
-	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=6 $(OMPFLAGS) $(SRC) verify_scores.cpp -o $@
-	./verify6
-
-compare: clean bench0 bench2 bench6 verify0 verify6
-	@echo "=== compare (no log) ==="
+	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=6 $(OMP_CXX) $(SRC) score_all_bench.cpp -o $@ $(OMP_LD)
 
 clean:
-	rm -f bench0 bench2 bench6
-
-MAP ?= ../cartographer_parallel/cartographer_parallel/maps/0501.pgm
+	rm -f microbench6 microbench7 bench0 bench2 bench6 verify0 verify6
