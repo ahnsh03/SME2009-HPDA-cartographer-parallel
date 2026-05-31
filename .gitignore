@@ -25,6 +25,9 @@ data/pa02/*_all_clean.log
 # 강의 PDF (용량)
 *.pdf
 
+# Upstream reference clone (read-only, not part of package)
+ref/
+
 # ROS / catkin (Jetson 로컬 빌드)
 build/
 devel/
