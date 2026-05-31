@@ -7,7 +7,7 @@
 namespace cartographer_parallel {
 namespace score_all_bench {
 
-// Matches opt6::kLargeCandThreshold in score_all.cpp (hybrid dispatch).
+// Hybrid dispatch in score_all (production): n=4 CPU, n>=64 GPU else CPU.
 constexpr int kDefaultLargeCandThreshold = 64;
 
 // Level-6 CPU paths: ScoreN4 (n=4), OpenMP (n>=64), else interchange.

@@ -62,7 +62,17 @@ sweep6: microbench6
 	./microbench6 --map $(MAP) --sweep --sweep-n-max 1024 --warmup 3 --iters 30
 
 sweep7: microbench7
-	./microbench7 --map $(MAP) --sweep --sweep-n-max 1024 --warmup 3 --iters 30
+	./microbench7 --map $(MAP) --sweep --sweep-n-max 4096 --warmup 5 --iters 50 \
+		--out $(BENCH_OUT)/pa01_bench_$$(date +%Y%m%d_%H%M%S)
+
+# Logged sweep → ../../data/bench/ (PC) or set BENCH_OUT on Jetson
+BENCH_OUT ?= ../../data/bench
+
+sweep-log7: microbench7
+	@mkdir -p $(BENCH_OUT)
+	$(MAKE) sweep7 BENCH_OUT=$(BENCH_OUT) MAP=$(MAP)
+	@echo "=== CSV in $(BENCH_OUT)/ ==="
+	@ls -lt $(BENCH_OUT)/pa01_bench_* 2>/dev/null | head -6 || true
 
 verify: microbench7
 	./microbench7 --map $(MAP) --verify --warmup 5 --iters 50

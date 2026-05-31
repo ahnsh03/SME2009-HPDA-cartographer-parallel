@@ -513,7 +513,9 @@ void ScoreOmpCandidates(const unsigned char* __restrict grid_data,
                         const int* __restrict cy_data,
                         float* __restrict score_out, const int n, const int p,
                         const int w, const int h, const float inv_denom) {
-#pragma omp parallel for schedule(static) if (n >= kLargeCandThreshold)
+  // dynamic,64: 손재호 — 부하 균형·오버헤드 절충 (large n).
+  // guided,32: 김은서 — 매우 큰 n에서도 유효.
+#pragma omp parallel for schedule(dynamic, 64) if (n >= 8)
   for (int i = 0; i < n; ++i) {
     int sum = 0;
     const int cx_i = cx_data[i];
@@ -624,7 +626,8 @@ void ScoreCpu(const unsigned char* grid, const int w, const int h,
     return;
   }
 #if defined(PA01_HAS_OPENMP) && PA01_HAS_OPENMP
-  if (n >= opt6::kLargeCandThreshold) {
+  // Bench: best CPU path at every n (OpenMP for n>=8, else interchange).
+  if (n >= 8) {
     opt6::ScoreOmpCandidates(grid, px, py, cx, cy, score_out, n, p, w, h,
                              inv_denom);
     return;

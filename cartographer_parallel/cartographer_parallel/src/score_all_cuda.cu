@@ -11,15 +11,14 @@ namespace cartographer_parallel {
 namespace score_all_cuda {
 namespace {
 
-constexpr int kBlockSize = 256;
-constexpr int kGpuCandThreshold = 64;
+constexpr int kBlockSize = 128;
+// Jetson Nano: 48 KiB shared memory / block (use margin for driver limits).
+constexpr size_t kMaxShmemScanBytes = 40960;
 
-__global__ void ScoreCandidatesKernel(const unsigned char* __restrict__ grid,
-                                      const int w, const int h, const int* px,
-                                      const int* py, const int p,
-                                      const int* cx, const int* cy,
-                                      const int n, const float inv_denom,
-                                      float* __restrict__ score_out) {
+__global__ void ScoreCandidatesKernelGlobal(
+    const unsigned char* __restrict__ grid, const int w, const int h,
+    const int* px, const int* py, const int p, const int* cx, const int* cy,
+    const int n, const float inv_denom, float* __restrict__ score_out) {
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= n) return;
 
@@ -29,6 +28,38 @@ __global__ void ScoreCandidatesKernel(const unsigned char* __restrict__ grid,
   for (int j = 0; j < p; ++j) {
     const int x = px[j] + cx_i;
     const int y = py[j] + cy_i;
+    if (static_cast<unsigned>(x) < static_cast<unsigned>(w) &&
+        static_cast<unsigned>(y) < static_cast<unsigned>(h)) {
+      sum += grid[y * w + x];
+    }
+  }
+  score_out[i] = static_cast<float>(sum) * inv_denom;
+}
+
+// px/py cooperative load into shared memory (이승빈·손재호 보고서 기법).
+__global__ void ScoreCandidatesKernelShmem(
+    const unsigned char* __restrict__ grid, const int w, const int h,
+    const int* px, const int* py, const int p, const int* cx, const int* cy,
+    const int n, const float inv_denom, float* __restrict__ score_out) {
+  extern __shared__ int shared_scan[];
+  int* const s_px = shared_scan;
+  int* const s_py = shared_scan + p;
+
+  for (int j = threadIdx.x; j < p; j += blockDim.x) {
+    s_px[j] = px[j];
+    s_py[j] = py[j];
+  }
+  __syncthreads();
+
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= n) return;
+
+  int sum = 0;
+  const int cx_i = cx[i];
+  const int cy_i = cy[i];
+  for (int j = 0; j < p; ++j) {
+    const int x = s_px[j] + cx_i;
+    const int y = s_py[j] + cy_i;
     if (static_cast<unsigned>(x) < static_cast<unsigned>(w) &&
         static_cast<unsigned>(y) < static_cast<unsigned>(h)) {
       sum += grid[y * w + x];
@@ -109,6 +140,11 @@ bool UploadGrid(DeviceBuffers& b, const unsigned char* grid, const int w,
   return true;
 }
 
+bool UseSharedMemoryKernel(const int p) {
+  const size_t bytes = static_cast<size_t>(p) * 2u * sizeof(int);
+  return bytes > 0 && bytes <= kMaxShmemScanBytes;
+}
+
 }  // namespace
 
 bool IsAvailable() {
@@ -125,7 +161,7 @@ bool ScoreCandidates(const unsigned char* grid, const int w, const int h,
                      float* score_out) {
   if (grid == nullptr || px == nullptr || py == nullptr || cx == nullptr ||
       cy == nullptr || score_out == nullptr || w <= 0 || h <= 0 || p <= 0 ||
-      n < kGpuCandThreshold) {
+      n <= 0) {
     return false;
   }
   if (!IsAvailable()) return false;
@@ -161,9 +197,16 @@ bool ScoreCandidates(const unsigned char* grid, const int w, const int h,
   }
 
   const int blocks = (n + kBlockSize - 1) / kBlockSize;
-  ScoreCandidatesKernel<<<blocks, kBlockSize, 0, b.stream>>>(
-      b.d_grid, w, h, b.d_px, b.d_py, p, b.d_cx, b.d_cy, n, inv_denom,
-      b.d_score);
+  if (UseSharedMemoryKernel(p)) {
+    const size_t shmem_bytes = need_p * 2u * sizeof(int);
+    ScoreCandidatesKernelShmem<<<blocks, kBlockSize, shmem_bytes, b.stream>>>(
+        b.d_grid, w, h, b.d_px, b.d_py, p, b.d_cx, b.d_cy, n, inv_denom,
+        b.d_score);
+  } else {
+    ScoreCandidatesKernelGlobal<<<blocks, kBlockSize, 0, b.stream>>>(
+        b.d_grid, w, h, b.d_px, b.d_py, p, b.d_cx, b.d_cy, n, inv_denom,
+        b.d_score);
+  }
 
   if (!CheckCuda(cudaGetLastError(), "ScoreCandidatesKernel launch")) {
     return false;

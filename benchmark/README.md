@@ -16,7 +16,7 @@ chmod +x run_microbench.sh
 ```bash
 make microbench7    # Jetson / CUDA PC
 make verify         # CPU vs GPU max_diff
-make sweep7         # n 스윕 + crossover 추천
+make sweep-log7   # n 스윕 + CSV → data/bench/ (또는 BENCH_OUT=)
 ```
 
 CPU만 (CUDA 없는 PC):
@@ -31,25 +31,30 @@ make sweep6
 | 항목 | 설명 |
 |------|------|
 | **입력** | map 0501.pgm (또는 synthetic), **p=1081**, 합성 cx/cy |
-| **CPU** | `ScoreN4`(n=4), OpenMP(n≥64), else interchange — **L6와 동일** |
-| **GPU** | `score_all_cuda::ScoreCandidates` — **동일 grid/px/py/cx/cy** |
+| **CPU (bench)** | n=4 `ScoreN4`, n≥8 OpenMP **dynamic,64**, else interchange |
+| **GPU (bench)** | **모든 n≥1**, px/py **shared memory** + device buffer cache |
+| **Production L7** | dispatch만 n=4 CPU / n≥64 GPU (threshold=64) |
 | **verify** | CPU vs GPU `max_diff` (기대: 0) |
 | **timing** | warmup 후 반복 평균 ms/call (bag cumulative 아님) |
 
 ## n 스윕 출력
 
 ```text
-n,cpu_ms,gpu_ms,cpu_over_gpu,max_diff
+n,cpu_ms,gpu_ms,cpu_over_gpu,max_diff,winner
 ...
-# crossover (first n with cpu/gpu>=1): n=...
-# recommend: use GPU for n>=..., CPU for n<...
+# gpu_crossover_n=... (first n where cpu/gpu<1, GPU faster)
 ```
 
-- **crossover**: GPU가 CPU와 같거나 빨라지는 **첫 n** (이 벤치·환경 기준)
-- **현재 코드**: `kLargeCandThreshold = 64` (`score_all.cpp`, `score_all_cuda.cu`)
-- SLAM bag에서는 **n=4(호출 多)** / **n=256(시간 多)** → 스윕 결과와 bag 로그를 **함께** 해석
+## Jetson CSV 저장
 
-Jetson catkin_ws (repo 루트 = `src/cartographer_parallel/`):
+```bash
+cd ~/catkin_ws/src/cartographer_parallel/benchmark
+BENCH_OUT=$HOME/pa01_bench_data make sweep-log7
+# PC: scp ...:~/pa01_bench_data/pa01_bench_* ./data/bench/
+```
+
+출력: `PREFIX_meta.txt`, `PREFIX_sweep.csv`, `PREFIX_summary.txt`
+
 
 ```text
 ~/catkin_ws/src/cartographer_parallel/
