@@ -109,6 +109,19 @@ pa02_microbench: pa02_microbench.cpp $(SRC) $(MATCHER_SRC)
 		$(SRC) $(MATCHER_SRC) pa02_microbench.cpp -o $@ $(OMP_LD)
 	@echo "=== pa02_microbench PA02_OPT_LEVEL=$(PA02_LEVEL) BRANCH_OMP=$(PA02_BRANCH_OMP) ==="
 
+# GPU L9 hybrid (same as production bag): validates L2 vs L3 with CUDA score_all.
+PA01_GPU_THRESHOLD ?= 256
+PA02_GPU_NVCCFLAGS := $(NVCCFLAGS) -DPA01_OPT_LEVEL=9 -DPA01_USE_GPU=1 \
+	-DPA01_GPU_DISPATCH_THRESHOLD=$(PA01_GPU_THRESHOLD) $(OMP_NVCC)
+PA02_GPU_CXXFLAGS := $(PA02_CXXFLAGS) -DPA01_OPT_LEVEL=9 -DPA01_USE_GPU=1 \
+	-DPA01_GPU_DISPATCH_THRESHOLD=$(PA01_GPU_THRESHOLD) $(OMP_CXX)
+
+pa02_microbench_gpu: pa02_microbench.cpp $(SRC) $(MATCHER_SRC) $(CUDA_SRC)
+	$(NVCC) $(PA02_GPU_NVCCFLAGS) -DPA02_BRANCH_OMP_MIN=$(PA02_BRANCH_OMP) \
+		$(SRC) $(MATCHER_SRC) $(CUDA_SRC) pa02_microbench.cpp \
+		-o $@ -lcudart $(OMP_LD)
+	@echo "=== pa02_microbench_gpu PA02=$(PA02_LEVEL) GPU_threshold=$(PA01_GPU_THRESHOLD) ==="
+
 pa02_microbench_l0:
 	$(MAKE) pa02_microbench PA02_LEVEL=0
 
@@ -150,4 +163,4 @@ bench6: score_all_bench.cpp $(SRC)
 	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=6 $(OMP_CXX) $(SRC) score_all_bench.cpp -o $@ $(OMP_LD)
 
 clean:
-	rm -f microbench6 microbench7 pa02_microbench bench0 bench2 bench6 verify0 verify6
+	rm -f microbench6 microbench7 pa02_microbench pa02_microbench_gpu bench0 bench2 bench6 verify0 verify6
