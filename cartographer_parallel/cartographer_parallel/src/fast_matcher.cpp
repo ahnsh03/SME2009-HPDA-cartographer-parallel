@@ -22,10 +22,8 @@
 #define PA02_BRANCH_OMP_MIN 999999
 #endif
 
-#if PA02_OPT_LEVEL >= 2
-#if defined(PA01_HAS_OPENMP) && !defined(PA01_USE_GPU)
+#if PA02_OPT_LEVEL >= 2 && defined(PA01_HAS_OPENMP)
 #include <omp.h>
-#endif
 #endif
 
 namespace cartographer_parallel {
@@ -331,6 +329,51 @@ void FastMatcher::Score(const Grid& grid, const std::vector<Scan>& scans,
   pa02_timing::ScopedTimer timer;
   int scans_scored = 0;
 #endif
+
+#if PA02_OPT_LEVEL >= 3
+  // L3: bucket candidates by scan (one pass), reuse buffers, skip empty scans.
+  static thread_local std::vector<std::vector<int>> buckets;
+  static thread_local std::vector<int> cx;
+  static thread_local std::vector<int> cy;
+  static thread_local std::vector<float> scores;
+
+  if (buckets.size() < scans.size()) {
+    buckets.resize(scans.size());
+  }
+  for (std::vector<int>& bucket : buckets) {
+    bucket.clear();
+  }
+
+  const size_t n_cand = cand->size();
+  for (size_t i = 0; i < n_cand; ++i) {
+    const int s = (*cand)[i].scan;
+    if (s >= 0 && static_cast<size_t>(s) < scans.size()) {
+      buckets[static_cast<size_t>(s)].push_back(static_cast<int>(i));
+    }
+  }
+
+  for (size_t s = 0; s < scans.size(); ++s) {
+    const std::vector<int>& bucket = buckets[s];
+    const size_t nb = bucket.size();
+    if (nb == 0) continue;
+#if PA02_DO_LOG
+    ++scans_scored;
+#endif
+    cx.resize(nb);
+    cy.resize(nb);
+    for (size_t k = 0; k < nb; ++k) {
+      const Cand& c = (*cand)[static_cast<size_t>(bucket[k])];
+      cx[k] = c.x;
+      cy[k] = c.y;
+    }
+    score_all(grid.cell, grid.w, grid.h, scans[s].x, scans[s].y, cx, cy,
+              &scores);
+    const size_t n_score = std::min(nb, scores.size());
+    for (size_t k = 0; k < n_score; ++k) {
+      (*cand)[static_cast<size_t>(bucket[k])].score = scores[k];
+    }
+  }
+#else
   for (size_t s = 0; s < scans.size(); ++s) {
     std::vector<int> ids;
     std::vector<int> cx;
@@ -353,6 +396,8 @@ void FastMatcher::Score(const Grid& grid, const std::vector<Scan>& scans,
       (*cand)[ids[i]].score = score[i];
     }
   }
+#endif
+
   std::sort(cand->begin(), cand->end(),
             [](const Cand& a, const Cand& b) { return a.score > b.score; });
 #if PA02_DO_LOG

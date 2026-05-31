@@ -118,6 +118,15 @@ pa02_microbench_l1:
 pa02_microbench_l2:
 	$(MAKE) pa02_microbench PA02_LEVEL=2 PA02_OMP_MIN=512 PA02_BRANCH_OMP=999999
 
+pa02_microbench_l3:
+	$(MAKE) pa02_microbench PA02_LEVEL=3 PA02_OMP_MIN=512 PA02_BRANCH_OMP=999999
+
+pa02_score_compare: pa02_microbench_l2 pa02_microbench_l3
+	@echo "=== match L2 vs L3 (CPU score_all inside) ==="
+	./pa02_microbench --yaml $(YAML) --mode match --warmup 2 --iters 10 | grep '^match'
+	$(MAKE) -s pa02_microbench PA02_LEVEL=3 PA02_OMP_MIN=512 PA02_BRANCH_OMP=999999
+	./pa02_microbench --yaml $(YAML) --mode match --warmup 2 --iters 10 | grep '^match'
+
 pa02_make_cand_verify: pa02_microbench_l1
 	./pa02_microbench --mode make_cand --verify
 
