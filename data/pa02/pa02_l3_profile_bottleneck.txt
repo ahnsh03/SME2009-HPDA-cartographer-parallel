@@ -1,0 +1,125 @@
+# PA02 bottleneck analysis - pa02_l3_profile
+# data_dir: /root/catkin_ws/src/hpda/data/pa02
+
+## Build / run env (excerpt)
+RUN=pa02_l3_profile
+PA01_OPT_LEVEL=9
+PA02_OPT_LEVEL=unknown
+ROS_MASTER_URI=http://192.168.0.106:11311
+ROS_IP=192.168.0.104
+PA01_GPU_THRESHOLD:STRING=256
+PA01_OPT_LEVEL:STRING=9
+PA02_OPT_LEVEL:STRING=3
+PA02_PROFILE:BOOL=ON
+
+## A. Module KPI decomposition
+
+| metric | ms | % of match |
+|--------|---:|-----------:|
+| [match] cumulative | 87,865.8 | 100.0% |
+| [score_all] cumulative (PA01 fixed) | 34,785.6 | 39.6% |
+| matcher_scope (match − score_all) | 53,080.2 | 60.4% |
+
+**Conclusion:** PA02 optimizes matcher_scope **53,080.2 ms** (60.4% of match); score_all held fixed at **34,785.6 ms**.
+
+## B. Score: kernel vs orchestration
+
+| metric | ms | note |
+|--------|---:|------|
+| [Score] cumulative | 57,074.7 | includes Branch-nested calls |
+| Σ score_all.elapsed | 34,730.1 | all from Score() |
+| **Score_orchestration** | **22,235.1** | **39.0% of Score** |
+
+### Score by n_cand (elapsed sum)
+
+| n_cand | calls | elapsed sum (ms) | avg (ms/call) |
+|--------|------:|-----------------:|--------------:|
+| 3840 | 2,308 | 40,521.6 | 17.557 |
+| 4 | 75,507 | 15,924.2 | 0.211 |
+| 2 | 2,384 | 443.3 | 0.186 |
+
+## C. Branch by depth (elapsed sum, includes nested Score)
+
+| depth | calls | elapsed sum (ms) | avg (ms/call) |
+|-------|------:|-----------------:|--------------:|
+| 0 | 6,330 | 0.0 | 0.000 |
+| 1 | 16,712 | 2,656.9 | 0.159 |
+| 2 | 54,867 | 9,603.4 | 0.175 |
+| 3 | 2,311 | 32,448.0 | 14.041 |
+
+## D. make_cand / MakeLowCands
+
+| tag | cumulative (ms) | % of match | calls |
+|-----|----------------:|-----------:|------:|
+| [make_cand] | 820.0 | 0.9% | 34,740 |
+| [MakeLowCands] | 5,824.7 | 6.6% | 2,316 |
+| MakeLowCands wrapper (est.) | 5,004.8 | 5.7% | — |
+
+### make_cand by grid_span (top 5)
+
+| grid_span | calls | elapsed sum (ms) |
+|-----------|------:|-----------------:|
+| 16x16 | 34,528 | 814.9 |
+| 16 | 6 | 0.1 |
+| 16x | 4 | 0.1 |
+
+## E. PA02 target selection (experiment-based)
+
+Three targets are **not** chosen by reading loops; they map to distinct matcher stages with measured cost in this bag run.
+
+### Excluded from PA02 optimization
+
+- **score_all** (34,785.6 ms): PA01 scope — fixed L9 + GPU threshold=256
+- **MakeScans/MakeBounds/ToOut**: not separately tagged; remainder after tagged costs
+
+### Selected targets (ranked by experimental relevance)
+
+| rank | target | Phase | cumulative (ms) | % match | experimental basis |
+|-----:|--------|------:|----------------:|--------:|--------------------|
+| 1 | `Branch` | 2 | 44,796.3 | 51.0% | Branch cumulative=44,796.3 ms (match의 51.0%). depth stratum으로 coarse(depth=3) 집중… |
+| 2 | `Score` | 3 | 57,074.7 | 65.0% | Score_orchestration=22,235.1 ms (Score cumulative의 39.0%, match의 25.3%). n_cand … |
+| 3 | `make_cand` | 1 | 820.0 | 0.9% | match의 0.9%로 절대 비중은 작으나, 호출 34,665회·격리 microbench 가능·side effect 적음 → Phase 1 검증… |
+
+### Target: `make_cand` (Phase 1)
+
+- **Role:** 후보 격자 (cx,cy) 생성 — B&B coarse 탐색 공간
+- **Measured:** cumulative=820.0 ms, calls=34,740, 0.9% of match
+- **Selection:** match의 0.9%로 절대 비중은 작으나, 호출 34,665회·격리 microbench 가능·side effect 적음 → Phase 1 검증 타깃
+- **Hot strata:**
+  - grid_span=16x16: 34,528 calls, 814.9 ms elapsed sum
+  - grid_span=16: 6 calls, 0.1 ms elapsed sum
+  - grid_span=16x: 4 calls, 0.1 ms elapsed sum
+
+### Target: `Score` (Phase 3)
+
+- **Role:** 스캔별 score_all 호출 + sort — B&B 점수 평가 오케스트레이션
+- **Measured:** cumulative=57,074.7 ms, calls=80,428, 65.0% of match
+- **Selection:** Score_orchestration=22,235.1 ms (Score cumulative의 39.0%, match의 25.3%). n_cand stratum에서 coarse(3840) vs leaf(4) 이중 regime → Phase 3 실험 대상
+- **Hot strata:**
+  - n_cand=3840: 2,308 calls, 40,521.6 ms elapsed sum
+  - n_cand=4: 75,507 calls, 15,924.2 ms elapsed sum
+  - n_cand=2: 2,384 calls, 443.3 ms elapsed sum
+
+### Target: `Branch` (Phase 2)
+
+- **Role:** Branch-and-Bound 재귀·가지치기·child split (내부 Score 포함)
+- **Measured:** cumulative=44,796.3 ms, calls=80,428, 51.0% of match
+- **Selection:** Branch cumulative=44,796.3 ms (match의 51.0%). depth stratum으로 coarse(depth=3) 집중 확인 → Phase 2 대상
+- **Hot strata:**
+  - depth=3: 2,311 calls, 32,448.0 ms elapsed sum
+  - depth=2: 54,867 calls, 9,603.4 ms elapsed sum
+  - depth=1: 16,712 calls, 2,656.9 ms elapsed sum
+  - depth=0: 6,330 calls, 0.0 ms elapsed sum
+
+## F. Implementation order (not impact order)
+
+| Phase | target | why this order |
+|------:|--------|----------------|
+| 1 | make_cand | smallest side effects; validates experiment pipeline |
+| 2 | Branch | depth=3 stratum largest B&B cost; after Phase 1 regression check |
+| 3 | Score | Score_orchestration + dual n_cand regime; CPU/GPU choice needs sweep |
+
+## G. Regression check (after each Phase)
+
+- `[score_all]` cumulative must stay near **34,785.6 ms** (±few %)
+- `[match]` cumulative is module KPI (L0 baseline **87,865.8 ms**)
