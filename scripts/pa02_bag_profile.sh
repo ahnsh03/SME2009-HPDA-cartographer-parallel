@@ -13,14 +13,11 @@ DATA_DIR="${DATA_DIR:-/root/catkin_ws/src/hpda/data/pa02}"
 mkdir -p "${DATA_DIR}"
 
 cd /root/catkin_ws
-source /opt/ros/melodic/setup.bash
-set +u
-source /root/.bashrc 2>/dev/null || true
-set -u
-source devel/setup.bash
-
 export ROS_MASTER_URI="${ROS_MASTER_URI:-http://192.168.0.106:11311}"
 export ROS_IP="${ROS_IP:-192.168.0.104}"
+source /opt/ros/melodic/setup.bash
+source /root/.bashrc 2>/dev/null || true
+source devel/setup.bash
 
 {
   date -Iseconds
