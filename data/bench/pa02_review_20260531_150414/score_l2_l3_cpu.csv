@@ -1,0 +1,5 @@
+level,avg_ms,last_score,iters,warmup,build
+L2,28.4946,0.1265,15,3,cpu_l6
+L3,26.5474,0.1265,15,3,cpu_l6
+L2,47.6098,0.1265,15,3,gpu_l9_t256
+L3,44.3259,0.1265,15,3,gpu_l9_t256

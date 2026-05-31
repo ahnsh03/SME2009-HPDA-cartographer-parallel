@@ -1,0 +1,50 @@
+# score_all path breakdown — pa02_l0_profile
+
+| path | calls | elapsed sum (ms) | % elapsed |
+|------|------:|-----------------:|----------:|
+| cuda | 31608 | 26727.5 | 79.4% |
+| interchange | 1789 | 121.9 | 0.4% |
+| n4 | 74050 | 6794.4 | 20.2% |
+
+**Hot n values (bag-like):**
+
+| n | calls | elapsed sum (ms) | dominant path |
+|--:|------:|-----------------:|---------------|
+| 2 | 1789 | 121.9 | interchange |
+| 4 | 74050 | 6794.4 | n4 |
+| 256 | 31608 | 26727.5 | cuda |
+
+
+# score_all path breakdown — pa02_l1_profile
+
+| path | calls | elapsed sum (ms) | % elapsed |
+|------|------:|-----------------:|----------:|
+| cuda | 32333 | 28006.5 | 81.4% |
+| interchange | 1934 | 114.9 | 0.3% |
+| n4 | 75953 | 6299.2 | 18.3% |
+
+**Hot n values (bag-like):**
+
+| n | calls | elapsed sum (ms) | dominant path |
+|--:|------:|-----------------:|---------------|
+| 2 | 1934 | 114.9 | interchange |
+| 4 | 75953 | 6299.2 | n4 |
+| 256 | 32333 | 28006.5 | cuda |
+
+
+# score_all path breakdown — pa02_l3_profile
+
+| path | calls | elapsed sum (ms) | % elapsed |
+|------|------:|-----------------:|----------:|
+| cuda | 34571 | 28171.1 | 81.4% |
+| interchange | 2384 | 143.9 | 0.4% |
+| n4 | 75393 | 6308.8 | 18.2% |
+
+**Hot n values (bag-like):**
+
+| n | calls | elapsed sum (ms) | dominant path |
+|--:|------:|-----------------:|---------------|
+| 2 | 2384 | 143.9 | interchange |
+| 4 | 75393 | 6308.8 | n4 |
+| 256 | 34571 | 28171.1 | cuda |
+
