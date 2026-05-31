@@ -135,3 +135,58 @@ CUDA 쪽 grid H2D는 `score_all_cuda.cu`의 `UploadGrid()` pointer cache로 **�
 | `data/bench/pa02_score_paths_bag.txt` | L0/L1/L3 path breakdown |
 | `data/bench/pa02_review_20260531_150414/` | OMP / L2 vs L3 sweep CSV |
 | `docs/PA02_PROFILING_STRATEGY.md` | Phase 0 병목 분석 |
+
+---
+
+## 7. Phase 3 하이브리드 결정 실험 (2026-05-31)
+
+**질문:** L3 CPU bucket + GPU kernel **하이브리드**가 맞는가, CPU-only / GPU-heavy 중 하나가 더 나은가?
+
+실행: `./scripts/pa02_phase3_hybrid_sweep.sh --bag`  
+데이터: `data/bench/pa02_phase3_hybrid_20260531_151643/`
+
+### 7.1 후보 정의
+
+| variant | PA02 | GPU threshold | 의미 |
+|---------|------|---------------|------|
+| legacy_gpu | L2 | 256 | 구 Score orch + hybrid kernel |
+| **hybrid_prod** | **L3** | **256** | **CPU bucket + hybrid kernel (채택)** |
+| cpu_score | L3 | 999999 | CPU bucket + CUDA 미사용 (OMP) |
+| gpu_aggr | L3 | 64 | CPU bucket + GPU threshold 낮춤 |
+
+### 7.2 bag KPI (모듈 KPI = `[match]` cumulative)
+
+| variant | match (ms) | Δ vs hybrid | score_all (ms) | Score (ms) | best |
+|---------|----------:|------------:|---------------:|-----------:|-----:|
+| **hybrid_prod** | **87,866** | — | **34,786** | **57,075** | 0.783 |
+| gpu_aggr | 87,713 | −0.2% | 35,152 | 57,342 | 0.783 |
+| legacy_gpu | 89,926 | +2.3% | 35,043 | 60,434 | 0.783 |
+| cpu_score | 91,750 | **+4.4%** | **47,325** | 66,875 | 0.783 |
+
+### 7.3 score_all path (cpu_score vs hybrid)
+
+| variant | n=256 dominant path | n=256 elapsed |
+|---------|---------------------|---------------|
+| hybrid_prod | **cuda (81%)** | ~28.2 s |
+| cpu_score | **omp_cand (88%)** | ~41.7 s |
+
+→ CPU-only(T=999999)는 coarse(n=256)를 GPU 대신 OpenMP로 처리 → score_all **+36%**.
+
+### 7.4 microbench vs bag (함정)
+
+| variant | microbench avg_ms | bag match ms |
+|---------|------------------:|-------------:|
+| cpu_score | **36.6** (가장 빠름) | 91,750 (가장 느림) |
+| hybrid_prod | 46.7 | **87,866** (가장 빠름) |
+
+연속 호출 microbench는 GPU launch/H2D overhead 때문에 CPU OMP가 유리해 보이지만, **sporadic bag 패턴에서는 hybrid(GPU)가 KPI 우승** (PA01 threshold 교훈과 동일).
+
+### 7.5 결론
+
+1. **하이브리드(L3 + T=256) 채택** — CPU orchestration(L3 bucket)과 PA01 GPU kernel을 **둘 다** 쓰는 것이 bag KPI 최적.
+2. **CPU-only는 bag에서 탈락** — microbench만 보면 빠르지만 match +4.4%.
+3. **GPU threshold 64는 T=256 대비 이득 없음** — match ±0.2%, score_all 오히려 소폭 증가.
+4. **L3 bucket은 GPU와 독립 이득** — legacy_gpu(L2+T256) 대비 hybrid −2.3%.
+
+별도 “batch GPU Score” 구현은 grid H2D가 이미 cache되어 있고, coarse는 scan당 n=256으로 GPU dispatch되므로 **추가 GPU 레이어 ROI 낮음**.
+

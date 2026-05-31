@@ -1,0 +1,16 @@
+# score_all path breakdown — pa02_hybrid_cpu_score
+
+| path | calls | elapsed sum (ms) | % elapsed |
+|------|------:|-----------------:|----------:|
+| interchange | 2068 | 125.1 | 0.3% |
+| n4 | 63672 | 5325.7 | 11.3% |
+| omp_cand | 28952 | 41652.7 | 88.4% |
+
+**Hot n values (bag-like):**
+
+| n | calls | elapsed sum (ms) | dominant path |
+|--:|------:|-----------------:|---------------|
+| 2 | 2068 | 125.1 | interchange |
+| 4 | 63672 | 5325.7 | n4 |
+| 256 | 28952 | 41652.7 | omp_cand |
+

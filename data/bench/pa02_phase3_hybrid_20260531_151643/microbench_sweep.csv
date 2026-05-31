@@ -1,0 +1,6 @@
+variant,pa02_level,gpu_threshold,avg_ms,last_score,iters,warmup
+legacy_gpu,L2,256,57.3569,0.1265,15,3
+hybrid_prod,L3,256,46.7379,0.1265,15,3
+cpu_score,L3,999999,36.5654,0.1265,15,3
+gpu_aggr,L3,64,35.5947,0.1265,15,3
+legacy_cpu,L2,999999,37.2256,0.1265,15,3

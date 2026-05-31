@@ -1,0 +1,16 @@
+# score_all path breakdown — pa02_hybrid_gpu_aggr
+
+| path | calls | elapsed sum (ms) | % elapsed |
+|------|------:|-----------------:|----------:|
+| cuda | 34553 | 28427.5 | 81.2% |
+| interchange | 2391 | 144.2 | 0.4% |
+| n4 | 76662 | 6425.8 | 18.4% |
+
+**Hot n values (bag-like):**
+
+| n | calls | elapsed sum (ms) | dominant path |
+|--:|------:|-----------------:|---------------|
+| 2 | 2391 | 144.2 | interchange |
+| 4 | 76662 | 6425.8 | n4 |
+| 256 | 34553 | 28427.5 | cuda |
+

@@ -1,0 +1,5 @@
+variant,pa02_level,gpu_threshold,match_ms,score_all_ms,score_ms,best_score
+hybrid_prod,L3,256,87865.755,34785.592,57074.667,0.783
+cpu_score,L3,999999,91749.655,47325.259,66875.154,0.783
+gpu_aggr,L3,64,87713.448,35151.975,57342.184,0.783
+legacy_gpu,L2,256,89925.609,35043.199,60434.129,0.783
