@@ -97,21 +97,26 @@ compare: microbench6 microbench7 verify sweep7
 
 # PA02: make_cand + MatchWithWindow (no ROS).
 PA02_LEVEL ?= 0
-PA02_OMP_MIN ?= 256
+PA02_OMP_MIN ?= 512
+PA02_BRANCH_OMP ?= 999999
 
 PA02_CXXFLAGS := $(CXXFLAGS) -DPA02_NO_LOG=1 -DPA02_OPT_LEVEL=$(PA02_LEVEL) \
 	-DPA02_MAKE_CAND_OMP_MIN=$(PA02_OMP_MIN)
 
 pa02_microbench: pa02_microbench.cpp $(SRC) $(MATCHER_SRC)
 	$(CXX) $(PA02_CXXFLAGS) -DPA01_OPT_LEVEL=6 $(OMP_CXX) \
+		-DPA02_BRANCH_OMP_MIN=$(PA02_BRANCH_OMP) \
 		$(SRC) $(MATCHER_SRC) pa02_microbench.cpp -o $@ $(OMP_LD)
-	@echo "=== pa02_microbench PA02_OPT_LEVEL=$(PA02_LEVEL) OMP_MIN=$(PA02_OMP_MIN) ==="
+	@echo "=== pa02_microbench PA02_OPT_LEVEL=$(PA02_LEVEL) BRANCH_OMP=$(PA02_BRANCH_OMP) ==="
 
 pa02_microbench_l0:
 	$(MAKE) pa02_microbench PA02_LEVEL=0
 
 pa02_microbench_l1:
-	$(MAKE) pa02_microbench PA02_LEVEL=1 PA02_OMP_MIN=256
+	$(MAKE) pa02_microbench PA02_LEVEL=1 PA02_OMP_MIN=512
+
+pa02_microbench_l2:
+	$(MAKE) pa02_microbench PA02_LEVEL=2 PA02_OMP_MIN=512 PA02_BRANCH_OMP=999999
 
 pa02_make_cand_verify: pa02_microbench_l1
 	./pa02_microbench --mode make_cand --verify

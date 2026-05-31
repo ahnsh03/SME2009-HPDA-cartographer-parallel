@@ -12,6 +12,19 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
+
+#ifndef PA02_OPT_LEVEL
+#define PA02_OPT_LEVEL 0
+#endif
+
+#ifndef PA02_BRANCH_OMP_MIN
+#define PA02_BRANCH_OMP_MIN 999999
+#endif
+
+#if PA02_OPT_LEVEL >= 2 && defined(PA01_HAS_OPENMP)
+#include <omp.h>
+#endif
 
 namespace cartographer_parallel {
 namespace {
@@ -282,6 +295,9 @@ std::vector<FastMatcher::Cand> FastMatcher::MakeLowCands(
 #endif
   const int step = 1 << depth;
   std::vector<Cand> out;
+#if PA02_OPT_LEVEL >= 2
+  out.reserve(bounds.size() * 256);
+#endif
   for (size_t s = 0; s < bounds.size(); ++s) {
     if (bounds[s].min_x > bounds[s].max_x ||
         bounds[s].min_y > bounds[s].max_y) {
@@ -344,6 +360,35 @@ void FastMatcher::Score(const Grid& grid, const std::vector<Scan>& scans,
 #endif
 }
 
+#if PA02_OPT_LEVEL >= 2
+namespace {
+
+thread_local std::vector<FastMatcher::Cand> g_branch_child;
+
+int FillBranchChildren(const FastMatcher::Cand& c, const int half,
+                       const std::vector<FastMatcher::Bounds>& bounds,
+                       std::vector<FastMatcher::Cand>* const child) {
+  child->clear();
+  child->reserve(4);
+  int gen = 0;
+  for (const int dx : {0, half}) {
+    if (c.x + dx > bounds[c.scan].max_x) continue;
+    for (const int dy : {0, half}) {
+      if (c.y + dy > bounds[c.scan].max_y) continue;
+      FastMatcher::Cand next;
+      next.scan = c.scan;
+      next.x = c.x + dx;
+      next.y = c.y + dy;
+      child->push_back(next);
+      ++gen;
+    }
+  }
+  return gen;
+}
+
+}  // namespace
+#endif
+
 FastMatcher::Cand FastMatcher::Branch(const std::vector<Grid>& grids,
                                       const std::vector<Scan>& scans,
                                       const std::vector<Bounds>& bounds,
@@ -374,6 +419,56 @@ FastMatcher::Cand FastMatcher::Branch(const std::vector<Grid>& grids,
   Cand best;
   best.score = min_score;
   const int half = 1 << (depth - 1);
+
+#if PA02_OPT_LEVEL >= 2
+  std::vector<Cand>& child = g_branch_child;
+#if defined(PA01_HAS_OPENMP) && !defined(PA01_USE_GPU)
+  const int n_cand = static_cast<int>(cand.size());
+  if (n_cand >= PA02_BRANCH_OMP_MIN) {
+#pragma omp parallel
+    {
+      Cand local_best;
+      local_best.score = min_score;
+#pragma omp for schedule(dynamic, 4)
+      for (int i = 0; i < n_cand; ++i) {
+        const Cand& c = cand[static_cast<size_t>(i)];
+        if (c.score <= best.score) continue;
+        const int gen = FillBranchChildren(c, half, bounds, &child);
+        if (gen == 0) continue;
+#if PA02_DO_LOG
+#pragma omp atomic
+        child_gen += gen;
+#endif
+        Score(grids[depth - 1], scans, &child);
+        const Cand refined =
+            Branch(grids, scans, bounds, child, depth - 1, local_best.score);
+        if (refined.score > local_best.score) local_best = refined;
+      }
+#pragma omp critical
+      {
+        if (local_best.score > best.score) best = local_best;
+      }
+    }
+#if PA02_DO_LOG
+    pa02_timing::LogBranch(timer.ElapsedUs(), depth, n_cand, child_gen,
+                           min_score, best.score);
+#endif
+    return best;
+  }
+#endif
+  for (const Cand& c : cand) {
+    if (c.score <= best.score) break;
+    const int gen = FillBranchChildren(c, half, bounds, &child);
+    if (gen == 0) continue;
+#if PA02_DO_LOG
+    child_gen += gen;
+#endif
+    Score(grids[depth - 1], scans, &child);
+    const Cand refined =
+        Branch(grids, scans, bounds, child, depth - 1, best.score);
+    if (refined.score > best.score) best = refined;
+  }
+#else
   for (const Cand& c : cand) {
     if (c.score <= best.score) break;
     std::vector<Cand> child;
@@ -396,6 +491,8 @@ FastMatcher::Cand FastMatcher::Branch(const std::vector<Grid>& grids,
                                 best.score);
     if (refined.score > best.score) best = refined;
   }
+#endif
+
 #if PA02_DO_LOG
   pa02_timing::LogBranch(timer.ElapsedUs(), depth, static_cast<int>(cand.size()),
                          child_gen, min_score, best.score);
