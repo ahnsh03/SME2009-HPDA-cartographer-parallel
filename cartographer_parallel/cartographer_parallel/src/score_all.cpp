@@ -16,6 +16,18 @@
 #define PA01_OPT_LEVEL 0
 #endif
 
+#ifndef PA02_OPT_LEVEL
+#define PA02_OPT_LEVEL 0
+#endif
+
+#ifndef PA02_MAKE_CAND_OMP_MIN
+#define PA02_MAKE_CAND_OMP_MIN 512
+#endif
+
+#if PA02_OPT_LEVEL >= 1 && defined(PA01_HAS_OPENMP)
+#include <omp.h>
+#endif
+
 #if defined(PA01_NO_LOG) && PA01_NO_LOG
 #define PA01_DO_LOG 0
 #else
@@ -147,12 +159,51 @@ void make_cand(const int min_x, const int max_x, const int min_y,
   const size_t base = cx->size();
   pa02_timing::ScopedTimer timer;
 #endif
+
+#if PA02_OPT_LEVEL == 0
   for (int x = min_x; x <= max_x; x += step) {
     for (int y = min_y; y <= max_y; y += step) {
       cx->push_back(x);
       cy->push_back(y);
     }
   }
+#else
+  // PA02 L1+: reserve + optional OpenMP (indexed fill preserves x-outer/y-inner order)
+  const int span_x =
+      (max_x >= min_x) ? (max_x - min_x) / step + 1 : 0;
+  const int span_y =
+      (max_y >= min_y) ? (max_y - min_y) / step + 1 : 0;
+  const int count = span_x * span_y;
+  if (count <= 0) return;
+
+  const size_t off = cx->size();
+  cx->reserve(off + static_cast<size_t>(count));
+  cy->reserve(off + static_cast<size_t>(count));
+
+#if defined(PA01_HAS_OPENMP) && PA02_OPT_LEVEL >= 1
+  if (count >= PA02_MAKE_CAND_OMP_MIN) {
+    cx->resize(off + static_cast<size_t>(count));
+    cy->resize(off + static_cast<size_t>(count));
+#pragma omp parallel for collapse(2) if(count >= PA02_MAKE_CAND_OMP_MIN)
+    for (int xi = 0; xi < span_x; ++xi) {
+      for (int yi = 0; yi < span_y; ++yi) {
+        const size_t idx = off + static_cast<size_t>(xi * span_y + yi);
+        (*cx)[idx] = min_x + xi * step;
+        (*cy)[idx] = min_y + yi * step;
+      }
+    }
+  } else
+#endif
+  {
+    for (int x = min_x; x <= max_x; x += step) {
+      for (int y = min_y; y <= max_y; y += step) {
+        cx->push_back(x);
+        cy->push_back(y);
+      }
+    }
+  }
+#endif
+
 #if PA02_DO_LOG
   pa02_timing::LogMakeCand(timer.ElapsedUs(),
                            static_cast<int>(cx->size() - base), min_x, max_x,

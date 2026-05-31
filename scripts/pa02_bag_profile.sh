@@ -56,5 +56,16 @@ grep -oE '\[(score_all|make_cand|MakeLowCands|Score|Branch|match|pa02)\][^[:cntr
   done
 } > "${DATA_DIR}/${RUN}_summary.txt"
 
+# Bottleneck decomposition + target selection report
+ANALYZE="${DATA_DIR}/../scripts/pa02_analyze_profile.py"
+if [[ ! -f "${ANALYZE}" ]]; then
+  ANALYZE="/root/catkin_ws/src/hpda/scripts/pa02_analyze_profile.py"
+fi
+if [[ -f "${ANALYZE}" ]]; then
+  python3 "${ANALYZE}" "${RUN}" --data-dir "${DATA_DIR}" || true
+else
+  echo "WARN: pa02_analyze_profile.py not found — skip bottleneck report"
+fi
+
 echo "=== done: ${DATA_DIR}/${RUN}_summary.txt ==="
 cat "${DATA_DIR}/${RUN}_summary.txt"

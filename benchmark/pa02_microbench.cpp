@@ -73,6 +73,50 @@ void BenchMakeCand(const int min_x, const int max_x, const int min_y,
             << " n_out=" << n_out << " avg_ms=" << (sum / iters) << std::endl;
 }
 
+void ReferenceMakeCand(const int min_x, const int max_x, const int min_y,
+                       const int max_y, const int step, std::vector<int>* cx,
+                       std::vector<int>* cy) {
+  cx->clear();
+  cy->clear();
+  for (int x = min_x; x <= max_x; x += step) {
+    for (int y = min_y; y <= max_y; y += step) {
+      cx->push_back(x);
+      cy->push_back(y);
+    }
+  }
+}
+
+bool VerifyMakeCand() {
+  const struct {
+    int min_x, max_x, min_y, max_y, step;
+  } cases[] = {
+      {-60, 60, -60, 60, 8},
+      {-60, 60, -60, 60, 16},
+      {-20, 20, -20, 20, 8},
+      {-80, 80, -80, 80, 32},
+      {0, 0, 0, 0, 1},
+  };
+  bool ok = true;
+  for (const auto& c : cases) {
+    std::vector<int> cx;
+    std::vector<int> cy;
+    std::vector<int> ref_x;
+    std::vector<int> ref_y;
+    cartographer_parallel::make_cand(c.min_x, c.max_x, c.min_y, c.max_y, c.step,
+                                     &cx, &cy);
+    ReferenceMakeCand(c.min_x, c.max_x, c.min_y, c.max_y, c.step, &ref_x,
+                      &ref_y);
+    if (cx != ref_x || cy != ref_y) {
+      std::cerr << "VERIFY FAIL bounds=[" << c.min_x << ".." << c.max_x << ","
+                << c.min_y << ".." << c.max_y << "] step=" << c.step
+                << " got=" << cx.size() << " ref=" << ref_x.size() << std::endl;
+      ok = false;
+    }
+  }
+  std::cout << "make_cand verify: " << (ok ? "PASS" : "FAIL") << std::endl;
+  return ok;
+}
+
 void BenchMatch(cartographer_parallel::FastMatcher* matcher,
                 const std::vector<float>& xs, const std::vector<float>& ys,
                 const cartographer_parallel::Pose2& init, const bool global,
@@ -108,6 +152,7 @@ int main(int argc, char** argv) {
   int iters = 20;
   bool sweep = false;
   bool baglike = false;
+  bool verify = false;
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -123,17 +168,23 @@ int main(int argc, char** argv) {
       sweep = true;
     } else if (arg == "--baglike") {
       baglike = true;
+    } else if (arg == "--verify") {
+      verify = true;
     } else if (arg == "--help") {
       std::cout << "Usage: pa02_microbench --yaml MAP.yaml [--mode make_cand|match]"
-                << " [--warmup N] [--iters N] [--sweep] [--baglike]\n";
+                << " [--warmup N] [--iters N] [--sweep] [--baglike] [--verify]\n";
       return 0;
     }
   }
 
   std::cout << "# PA02 microbench PA01_OPT_LEVEL=" << PA01_OPT_LEVEL
-            << " PA02_OPT_LEVEL=" << PA02_OPT_LEVEL << "\n";
+            << " PA02_OPT_LEVEL=" << PA02_OPT_LEVEL
+            << " PA02_MAKE_CAND_OMP_MIN=" << PA02_MAKE_CAND_OMP_MIN << "\n";
 
   if (mode == "make_cand") {
+    if (verify) {
+      return VerifyMakeCand() ? 0 : 1;
+    }
     if (sweep) {
       // Typical coarse windows: lin=60 cells (3m/0.05), step=16 (depth=4)
       const int lin[] = {20, 40, 60, 80};
@@ -144,7 +195,7 @@ int main(int argc, char** argv) {
         }
       }
     } else {
-      BenchMakeCand(-60, 60, -60, 60, 16, warmup, iters);
+      BenchMakeCand(-60, 60, -60, 60, 8, warmup, iters);
     }
     return 0;
   }

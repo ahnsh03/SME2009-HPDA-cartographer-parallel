@@ -95,17 +95,33 @@ verify: microbench7
 compare: microbench6 microbench7 verify sweep7
 	@echo "=== done: see sweep CSV above for GPU crossover ==="
 
-# PA02: make_cand + MatchWithWindow (no ROS). CPU L6 score_all baseline inside matcher.
-pa02_microbench: pa02_microbench.cpp $(SRC) $(MATCHER_SRC)
-	$(CXX) $(CXXFLAGS) -DPA01_OPT_LEVEL=6 -DPA02_NO_LOG=1 -DPA02_OPT_LEVEL=0 $(OMP_CXX) \
-		$(SRC) $(MATCHER_SRC) pa02_microbench.cpp -o $@ $(OMP_LD)
-	@echo "=== pa02_microbench (make_cand + match, PA01 L6 inside) ==="
-	./pa02_microbench --yaml $(YAML) --mode make_cand --sweep --warmup 3 --iters 30
-	./pa02_microbench --yaml $(YAML) --mode match --warmup 2 --iters 10
+# PA02: make_cand + MatchWithWindow (no ROS).
+PA02_LEVEL ?= 0
+PA02_OMP_MIN ?= 256
 
-pa02_sweep: pa02_microbench
+PA02_CXXFLAGS := $(CXXFLAGS) -DPA02_NO_LOG=1 -DPA02_OPT_LEVEL=$(PA02_LEVEL) \
+	-DPA02_MAKE_CAND_OMP_MIN=$(PA02_OMP_MIN)
+
+pa02_microbench: pa02_microbench.cpp $(SRC) $(MATCHER_SRC)
+	$(CXX) $(PA02_CXXFLAGS) -DPA01_OPT_LEVEL=6 $(OMP_CXX) \
+		$(SRC) $(MATCHER_SRC) pa02_microbench.cpp -o $@ $(OMP_LD)
+	@echo "=== pa02_microbench PA02_OPT_LEVEL=$(PA02_LEVEL) OMP_MIN=$(PA02_OMP_MIN) ==="
+
+pa02_microbench_l0:
+	$(MAKE) pa02_microbench PA02_LEVEL=0
+
+pa02_microbench_l1:
+	$(MAKE) pa02_microbench PA02_LEVEL=1 PA02_OMP_MIN=256
+
+pa02_make_cand_verify: pa02_microbench_l1
+	./pa02_microbench --mode make_cand --verify
+
+pa02_sweep: pa02_microbench_l0 pa02_microbench_l1
+	@echo "=== L0 make_cand sweep ==="
 	./pa02_microbench --yaml $(YAML) --mode make_cand --sweep --warmup 5 --iters 50
-	./pa02_microbench --yaml $(YAML) --mode match --sweep --warmup 3 --iters 20 --baglike
+	@echo "=== L1 make_cand sweep (OMP min=256) ==="
+	$(MAKE) pa02_microbench PA02_LEVEL=1 PA02_OMP_MIN=256
+	./pa02_microbench --yaml $(YAML) --mode make_cand --sweep --warmup 5 --iters 50
 
 # Legacy targets (level 0/2/6 quick bench via score_all())
 legacy: bench0 bench2 bench6
