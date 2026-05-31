@@ -44,6 +44,8 @@ class FastCorrelativeNode {
   FastCorrelativeNode() {
     ros::NodeHandle nh;
     ros::NodeHandle pnh("~");
+    // Launch <group ns="student_19">: topics live in group ns, not under node name.
+    ros::NodeHandle nh_group(nh, "..");
 
     std::string map_yaml;
     std::string scan_topic;
