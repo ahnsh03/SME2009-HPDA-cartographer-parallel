@@ -39,40 +39,28 @@ roslaunch cartographer_parallel cartographer_parallel_with_bag.launch ns:="stude
 
 ### Git clone (catkin `src/` 배치)
 
-Repo 루트 안에 이미 `cartographer_parallel/` 폴더가 있으므로, **clone 대상 폴더 이름을 `cartographer_parallel`로 하면 경로가 3중**이 됩니다. 아래처럼 **repo만 clone한 뒤 inner 폴더만 `src/`로 옮깁니다.**
+Repo 루트 안에 `cartographer_parallel/` 폴더가 **한 번 더** 있으므로, clone 폴더 이름을 `cartographer_parallel`로 하면 `src/cartographer_parallel/cartographer_parallel/cartographer_parallel/…`처럼 **3중**이 됩니다.
+
+**권장:** repo 전체를 다른 이름(예: `hpda`)으로 clone → `git pull` 유지.
 
 ```bash
 cd ~/catkin_ws/src
-rm -rf cartographer_parallel cartographer_parallel.bak _hpda_repo
-git clone --depth 1 https://github.com/ahnsh03/SME2009-HPDA-cartographer-parallel.git _hpda_repo
-mv _hpda_repo/cartographer_parallel cartographer_parallel
-rm -rf _hpda_repo
+rm -rf hpda cartographer_parallel cartographer_parallel.bak
+git clone --depth 1 https://github.com/ahnsh03/SME2009-HPDA-cartographer-parallel.git hpda
 
-# 기대 경로: src/cartographer_parallel/cartographer_parallel/package.xml
-ls cartographer_parallel/cartographer_parallel/package.xml
+ls hpda/cartographer_parallel/cartographer_parallel/package.xml
 
 cd ~/catkin_ws
-rm -rf build devel   # 경로 변경 후 1회 클린 빌드 권장
+rm -rf build devel
 catkin_make -DPA01_OPT_LEVEL=9 -DPA01_USE_GPU=ON -DPA02_PROFILE=ON -DPA02_OPT_LEVEL=0
 source devel/setup.bash
 ```
 
-이후 코드 갱신:
-
-```bash
-cd ~/catkin_ws/src/cartographer_parallel/cartographer_parallel
-# inner가 git root가 아님 → repo 루트에서 pull:
-cd ~/catkin_ws/src && rm -rf _hpda_repo && git clone --depth 1 ... _hpda_repo && \
-  rsync -a _hpda_repo/cartographer_parallel/ cartographer_parallel/ && rm -rf _hpda_repo
-```
-
-또는 `src/cartographer_parallel` 전체를 repo root로 symlink/clone 유지하려면 `_hpda_repo` 이름으로 clone하고 `scripts/` 등은 repo 루트에서 별도 sync.
-
-**간단 pull (repo root를 `src/hpda`로 clone해 두는 경우):**
+코드 갱신:
 
 ```bash
 cd ~/catkin_ws/src/hpda && git pull
 cd ~/catkin_ws && catkin_make ...
 ```
 
-catkin은 `src/` 아래 `package.xml`을 재귀 탐색하므로 clone **폴더 이름**은 자유롭지만, **ROS 패키지 depth**는 `.../cartographer_parallel/cartographer_parallel/package.xml` (2단)이 README·launch와 일치합니다.
+catkin은 `src/` 아래 `package.xml`을 재귀 탐색합니다. 예전 수동 복사본(`src/cartographer_parallel/…`)과 **동시에 두지 마세요** — duplicate package 오류 원인.
