@@ -27,6 +27,7 @@ source devel/setup.bash
   echo "ROS_MASTER_URI=${ROS_MASTER_URI}"
   echo "ROS_IP=${ROS_IP}"
   grep -E 'PA01_OPT_LEVEL|PA02_OPT_LEVEL|PA02_PROFILE|PA01_GPU' build/CMakeCache.txt 2>/dev/null || true
+  grep 'PA01_GPU_DISPATCH_THRESHOLD' build/cartographer_parallel/cartographer_parallel/CMakeFiles/assignment_cpu_lib.dir/flags.make 2>/dev/null || true
 } | tee "${DATA_DIR}/${RUN}_env.txt"
 echo "=== PA02 profile bag run=${RUN} ==="
 roslaunch cartographer_parallel cartographer_parallel_with_bag.launch ns:="student_19" \
