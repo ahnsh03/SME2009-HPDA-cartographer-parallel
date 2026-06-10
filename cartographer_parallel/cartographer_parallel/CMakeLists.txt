@@ -15,6 +15,9 @@ set(PA02_MAKE_CAND_OMP_MIN "512" CACHE STRING "PA02 L1 make_cand OpenMP min cand
 set(PA02_BRANCH_OMP_MIN "999999" CACHE STRING "PA02 L2 Branch OpenMP min cand_in (CPU-only)")
 # 0 = auto (resolved below from PA01_OPT_LEVEL and written back to cache)
 set(PA01_GPU_THRESHOLD "0" CACHE STRING "GPU dispatch min n (0=auto: L7→64, L9→256)")
+# CUDA score_all kernel tuning (PA01 experiment / production override)
+set(PA01_CUDA_BLOCK_SIZE "128" CACHE STRING "CUDA threads per block for ScoreCandidates")
+option(PA01_CUDA_USE_PINNED "Pinned host staging for score_all H2D copies" OFF)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -92,6 +95,12 @@ endif()
 
 if(PA01_USE_GPU)
   target_compile_definitions(assignment_cpu_lib PRIVATE PA01_USE_GPU=1)
+  target_compile_definitions(assignment_cpu_lib PRIVATE PA01_CUDA_BLOCK_SIZE=${PA01_CUDA_BLOCK_SIZE})
+  if(PA01_CUDA_USE_PINNED)
+    target_compile_definitions(assignment_cpu_lib PRIVATE PA01_CUDA_USE_PINNED=1)
+    message(STATUS "PA01 CUDA pinned H2D staging ON")
+  endif()
+  message(STATUS "PA01 CUDA block size=${PA01_CUDA_BLOCK_SIZE}")
   set_target_properties(assignment_cpu_lib PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
     POSITION_INDEPENDENT_CODE ON

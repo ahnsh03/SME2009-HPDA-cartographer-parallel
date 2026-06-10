@@ -32,6 +32,14 @@ NVCCFLAGS := -std=c++14 -O3 -arch=sm_53 --use_fast_math $(INC) \
 	-DPA01_NO_LOG=1 -DPA01_BENCH_API=1 \
 	-Xcompiler=-Wall,-Wextra
 
+PA01_CUDA_BLOCK_SIZE ?= 128
+PA01_CUDA_USE_PINNED ?= 0
+CUDA_TUNING := -DPA01_CUDA_BLOCK_SIZE=$(PA01_CUDA_BLOCK_SIZE)
+ifeq ($(PA01_CUDA_USE_PINNED),1)
+CUDA_TUNING += -DPA01_CUDA_USE_PINNED=1
+endif
+NVCCFLAGS += $(CUDA_TUNING)
+
 HAS_OPENMP := $(shell $(CXX) -fopenmp -dM -E - < /dev/null >/dev/null 2>&1 && echo 1)
 ifeq ($(HAS_OPENMP),1)
   OMP_CXX := -fopenmp -DPA01_HAS_OPENMP=1
@@ -43,7 +51,7 @@ else
   OMP_LD :=
 endif
 
-.PHONY: all clean microbench6 microbench7 sweep6 sweep7 verify compare legacy baglike7 sweep-baglike7 pa02_microbench pa02_sweep
+.PHONY: all clean microbench6 microbench7 sweep6 sweep7 verify compare legacy baglike7 sweep-baglike7 pa02_microbench pa02_sweep pa01_cuda_sweep
 
 all: microbench6
 
@@ -88,6 +96,23 @@ sweep-baglike7: microbench7
 		--out $(BENCH_OUT)/pa01_baglike_$$(date +%Y%m%d_%H%M%S)
 	@echo "=== bag-like CSV in $(BENCH_OUT)/ ==="
 	@ls -lt $(BENCH_OUT)/pa01_baglike_* 2>/dev/null | head -6 || true
+
+# PA01 CUDA tuning sweep: baseline / block256 / pinned / combo (requires GPU).
+pa01_cuda_sweep:
+	@mkdir -p $(BENCH_OUT)
+	@OUT="$(BENCH_OUT)/pa01_cuda_experiment_$$(date +%Y%m%d_%H%M%S)"; \
+	echo "variant,block_size,pinned,n,gpu_ms,cpu_ms,max_diff,winner" > "$$OUT.csv"; \
+	for spec in "baseline:128:0" "block256:256:0" "block512:512:0" "pinned128:128:1" "pinned256:256:1" "combo256:256:1"; do \
+	  name=$${spec%%:*}; rest=$${spec#*:}; blk=$${rest%%:*}; pin=$${rest##*:}; \
+	  echo "=== $$name block=$$blk pinned=$$pin ==="; \
+	  $(MAKE) -s microbench7 PA01_CUDA_BLOCK_SIZE=$$blk PA01_CUDA_USE_PINNED=$$pin MAP=$(MAP); \
+	  ./microbench7 --map $(MAP) --verify --warmup 5 --iters 30 2>/dev/null | tail -3; \
+	  line=$$(./microbench7 --map $(MAP) --baglike --warmup 15 --iters 100 --p 1081 2>/dev/null | awk '/^256 /{print $$2,$$3,$$4,$$5}'); \
+	  gpu_ms=$$(echo $$line | awk '{print $$1}'); cpu_ms=$$(echo $$line | awk '{print $$2}'); \
+	  diff=$$(echo $$line | awk '{print $$3}'); win=$$(echo $$line | awk '{print $$4}'); \
+	  echo "$$name,$$blk,$$pin,256,$$gpu_ms,$$cpu_ms,$$diff,$$win" >> "$$OUT.csv"; \
+	done; \
+	echo "=== sweep CSV: $$OUT.csv ==="; cat "$$OUT.csv"
 
 verify: microbench7
 	./microbench7 --map $(MAP) --verify --warmup 5 --iters 50

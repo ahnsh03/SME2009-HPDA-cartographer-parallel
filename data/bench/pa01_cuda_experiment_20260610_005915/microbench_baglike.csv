@@ -1,0 +1,11 @@
+variant,block_size,pinned,cuda_tag,n,cpu_ms,gpu_ms,max_diff,winner,verify
+baseline,128,0,block128,4,0.0234,0.6128,0.0000,cpu,PASS
+baseline,128,0,block128,256,0.6589,0.7703,0.0000,cpu,PASS
+block256,256,0,block256,4,0.0204,0.6092,0.0000,cpu,PASS
+block256,256,0,block256,256,0.6506,0.6276,0.0000,tie,PASS
+block512,512,0,block512,4,0.0205,0.5947,0.0000,cpu,PASS
+block512,512,0,block512,256,0.6300,0.6387,0.0000,tie,PASS
+pinned128,128,1,block128_pinned,4,0.0206,0.9009,0.0000,cpu,PASS
+pinned128,128,1,block128_pinned,256,0.6518,0.8116,0.0000,cpu,PASS
+pinned256,256,1,block256_pinned,4,0.0201,0.5500,0.0000,cpu,PASS
+pinned256,256,1,block256_pinned,256,0.7244,0.8135,0.0000,cpu,PASS

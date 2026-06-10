@@ -7,6 +7,9 @@ namespace score_all_cuda {
 // True if a CUDA device is present and runtime initialized.
 bool IsAvailable();
 
+// Compile-time variant tag for benchmarks/logs (e.g. "block128", "block256_pinned").
+const char* BuildVariantTag();
+
 // Score n candidates on GPU (same math as CPU score_all).
 // grid/px/py/cx/cy are host pointers; score_out is host buffer of size n.
 // Includes H2D/D2H and device grid caching when the host grid pointer is unchanged.

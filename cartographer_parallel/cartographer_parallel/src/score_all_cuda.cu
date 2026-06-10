@@ -5,13 +5,22 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <vector>
+
+#ifndef PA01_CUDA_BLOCK_SIZE
+#define PA01_CUDA_BLOCK_SIZE 128
+#endif
+
+#ifndef PA01_CUDA_USE_PINNED
+#define PA01_CUDA_USE_PINNED 0
+#endif
 
 namespace cartographer_parallel {
 namespace score_all_cuda {
 namespace {
 
-constexpr int kBlockSize = 128;
+constexpr int kBlockSize = PA01_CUDA_BLOCK_SIZE;
 // Jetson Nano: 48 KiB shared memory / block (use margin for driver limits).
 constexpr size_t kMaxShmemScanBytes = 40960;
 
@@ -90,6 +99,26 @@ struct DeviceBuffers {
   bool initialized = false;
 };
 
+#if PA01_CUDA_USE_PINNED
+struct PinnedBuffers {
+  void* grid = nullptr;
+  void* px = nullptr;
+  void* py = nullptr;
+  void* cx = nullptr;
+  void* cy = nullptr;
+  size_t cap_grid_bytes = 0;
+  size_t cap_px_bytes = 0;
+  size_t cap_py_bytes = 0;
+  size_t cap_cx_bytes = 0;
+  size_t cap_cy_bytes = 0;
+};
+
+PinnedBuffers& PinBuffers() {
+  static PinnedBuffers buf;
+  return buf;
+}
+#endif
+
 DeviceBuffers& Buffers() {
   static DeviceBuffers buf;
   return buf;
@@ -102,7 +131,7 @@ bool CheckCuda(const cudaError_t err, const char* what) {
 }
 
 template <typename T>
-bool Grow(T** ptr, size_t* cap, const size_t need) {
+bool GrowDevice(T** ptr, size_t* cap, const size_t need) {
   if (*ptr != nullptr && *cap >= need) return true;
   if (*ptr != nullptr) {
     cudaFree(*ptr);
@@ -112,6 +141,31 @@ bool Grow(T** ptr, size_t* cap, const size_t need) {
   return CheckCuda(cudaMalloc(reinterpret_cast<void**>(ptr), (*cap) * sizeof(T)),
                     "cudaMalloc");
 }
+
+#if PA01_CUDA_USE_PINNED
+bool GrowPinnedBytes(void** ptr, size_t* cap_bytes, const size_t need_bytes) {
+  if (*ptr != nullptr && *cap_bytes >= need_bytes) return true;
+  if (*ptr != nullptr) {
+    cudaFreeHost(*ptr);
+    *ptr = nullptr;
+  }
+  *cap_bytes = std::max(need_bytes, (*cap_bytes == 0) ? size_t{4096} : (*cap_bytes * 2));
+  return CheckCuda(cudaHostAlloc(ptr, *cap_bytes, cudaHostAllocDefault),
+                   "cudaHostAlloc bytes");
+}
+
+bool CopyHostToDeviceAsync(void* dst, const void* src, const size_t bytes,
+                           cudaStream_t stream, void** pinned,
+                           size_t* pinned_cap_bytes) {
+  if (bytes == 0) return true;
+  if (!GrowPinnedBytes(pinned, pinned_cap_bytes, bytes)) {
+    return false;
+  }
+  std::memcpy(*pinned, src, bytes);
+  return CheckCuda(cudaMemcpyAsync(dst, *pinned, bytes, cudaMemcpyHostToDevice, stream),
+                   "cudaMemcpy H2D pinned");
+}
+#endif
 
 bool InitOnce() {
   DeviceBuffers& b = Buffers();
@@ -128,12 +182,20 @@ bool UploadGrid(DeviceBuffers& b, const unsigned char* grid, const int w,
       b.d_grid != nullptr) {
     return true;
   }
-  if (!Grow(&b.d_grid, &b.grid_cap, bytes)) return false;
+  if (!GrowDevice(&b.d_grid, &b.grid_cap, bytes)) return false;
+#if PA01_CUDA_USE_PINNED
+  PinnedBuffers& pin = PinBuffers();
+  if (!CopyHostToDeviceAsync(b.d_grid, grid, bytes, b.stream, &pin.grid,
+                             &pin.cap_grid_bytes)) {
+    return false;
+  }
+#else
   if (!CheckCuda(cudaMemcpyAsync(b.d_grid, grid, bytes, cudaMemcpyHostToDevice,
                                  b.stream),
                  "cudaMemcpy grid H2D")) {
     return false;
   }
+#endif
   b.host_grid_key = grid;
   b.grid_w = w;
   b.grid_h = h;
@@ -145,7 +207,35 @@ bool UseSharedMemoryKernel(const int p) {
   return bytes > 0 && bytes <= kMaxShmemScanBytes;
 }
 
+#if !PA01_CUDA_USE_PINNED
+bool CopyIntBufferAsync(int* dst, const int* src, const size_t bytes,
+                        cudaStream_t stream) {
+  return CheckCuda(cudaMemcpyAsync(dst, src, bytes, cudaMemcpyHostToDevice, stream),
+                   "cudaMemcpy H2D");
+}
+#endif
+
+#if PA01_CUDA_USE_PINNED
+bool CopyIntBufferPinnedAsync(int* dst, const int* src, const size_t bytes,
+                              cudaStream_t stream, void** pinned,
+                              size_t* pinned_cap_bytes) {
+  return CopyHostToDeviceAsync(dst, src, bytes, stream, pinned, pinned_cap_bytes);
+}
+#endif
+
 }  // namespace
+
+const char* BuildVariantTag() {
+#if PA01_CUDA_USE_PINNED
+  static char tag[32];
+  std::snprintf(tag, sizeof(tag), "block%d_pinned", kBlockSize);
+  return tag;
+#else
+  static char tag[32];
+  std::snprintf(tag, sizeof(tag), "block%d", kBlockSize);
+  return tag;
+#endif
+}
 
 bool IsAvailable() {
   int count = 0;
@@ -171,9 +261,11 @@ bool ScoreCandidates(const unsigned char* grid, const int w, const int h,
   const size_t need_n = static_cast<size_t>(n);
 
   if (!UploadGrid(b, grid, w, h)) return false;
-  if (!Grow(&b.d_px, &b.cap_px, need_p) || !Grow(&b.d_py, &b.cap_py, need_p) ||
-      !Grow(&b.d_cx, &b.cap_cx, need_n) || !Grow(&b.d_cy, &b.cap_cy, need_n) ||
-      !Grow(&b.d_score, &b.cap_score, need_n)) {
+  if (!GrowDevice(&b.d_px, &b.cap_px, need_p) ||
+      !GrowDevice(&b.d_py, &b.cap_py, need_p) ||
+      !GrowDevice(&b.d_cx, &b.cap_cx, need_n) ||
+      !GrowDevice(&b.d_cy, &b.cap_cy, need_n) ||
+      !GrowDevice(&b.d_score, &b.cap_score, need_n)) {
     return false;
   }
 
@@ -181,20 +273,26 @@ bool ScoreCandidates(const unsigned char* grid, const int w, const int h,
   const size_t cx_bytes = need_n * sizeof(int);
   const size_t score_bytes = need_n * sizeof(float);
 
-  if (!CheckCuda(cudaMemcpyAsync(b.d_px, px, px_bytes, cudaMemcpyHostToDevice,
-                                 b.stream),
-                 "cudaMemcpy px") ||
-      !CheckCuda(cudaMemcpyAsync(b.d_py, py, px_bytes, cudaMemcpyHostToDevice,
-                                 b.stream),
-                 "cudaMemcpy py") ||
-      !CheckCuda(cudaMemcpyAsync(b.d_cx, cx, cx_bytes, cudaMemcpyHostToDevice,
-                                 b.stream),
-                 "cudaMemcpy cx") ||
-      !CheckCuda(cudaMemcpyAsync(b.d_cy, cy, cx_bytes, cudaMemcpyHostToDevice,
-                                 b.stream),
-                 "cudaMemcpy cy")) {
+#if PA01_CUDA_USE_PINNED
+  PinnedBuffers& pin = PinBuffers();
+  if (!CopyIntBufferPinnedAsync(b.d_px, px, px_bytes, b.stream, &pin.px,
+                                &pin.cap_px_bytes) ||
+      !CopyIntBufferPinnedAsync(b.d_py, py, px_bytes, b.stream, &pin.py,
+                                &pin.cap_py_bytes) ||
+      !CopyIntBufferPinnedAsync(b.d_cx, cx, cx_bytes, b.stream, &pin.cx,
+                                &pin.cap_cx_bytes) ||
+      !CopyIntBufferPinnedAsync(b.d_cy, cy, cx_bytes, b.stream, &pin.cy,
+                                &pin.cap_cy_bytes)) {
     return false;
   }
+#else
+  if (!CopyIntBufferAsync(b.d_px, px, px_bytes, b.stream) ||
+      !CopyIntBufferAsync(b.d_py, py, px_bytes, b.stream) ||
+      !CopyIntBufferAsync(b.d_cx, cx, cx_bytes, b.stream) ||
+      !CopyIntBufferAsync(b.d_cy, cy, cx_bytes, b.stream)) {
+    return false;
+  }
+#endif
 
   const int blocks = (n + kBlockSize - 1) / kBlockSize;
   if (UseSharedMemoryKernel(p)) {
