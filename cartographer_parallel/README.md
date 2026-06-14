@@ -2,6 +2,10 @@
 
 Minimal ROS1 package bundle for the standalone 2D fast correlative scan matcher.
 
+> **SME2009 PA01/PA02 제출·채점:** 이 파일은 패키지 개요만 담습니다.  
+> **빌드 옵션, PA02 재현, bag KPI, Jetson 절차**는 저장소 **루트**의 [`README.md`](../README.md)를 보세요.  
+> (GitHub: repo 최상단 `README.md` — clone 루트 `hpda/README.md`)
+
 ## Contents
 
 - `cartographer_parallel/`: ROS1 catkin package.
